@@ -1,0 +1,90 @@
+name: prebuilds
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The Release version.  Allowed format: x.y.z[-alphaN | -betaN | -rcN | -devN | -postN]"
+        required: true
+        default: "1.0.0-dev"
+        type: string
+      cxx_change:
+        description: "The PR number or SHA if wanting to build against a PR/SHA in the C++ SDK"
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        node-version: ["18.x", "20.x"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Confirm Node version
+        run: node --version
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+      - name: Run lint
+        run: npm run lint
+
+  sdist:
+    runs-on: ubuntu-20.04
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Checkout pull-request
+        if: github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'PR_')
+        run: |
+          cd deps/couchbase-cxx-client
+          git fetch origin pull/$(echo "$CXX_CHG" | cut -d'_' -f 2)/head:tmp
+          git checkout tmp
+          git log --oneline -n 10
+        env:
+          CXX_CHG: ${{ inputs.cxx_change }}
+      - name: Checkout branch
+        if: github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'BR_')
+        run: |
+          cd deps/couchbase-cxx-client
+          git fetch origin
+          git --no-pager branch -r
+          git checkout $(echo "$CXX_CHG" | cut -d'_' -f 2)
+          git log --oneline -n 10
+          cd ../..
+        env:
+          CXX_CHG: ${{ inputs.cxx_change }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+      - name: Confirm Node.js version
+        run: node --version
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+      - name: Set CPM cache
+        run: npm run prebuild -- --configure --set-cpm-cache --use-boringssl
+      - name: Create sdist
+        id: build_sdist
+        run: |
+          rm -rf ./build
+          node -e "var x = JSON.parse(fs.readFileSync('package.json')); x.version = '${{ inputs.version }}'; fs.writeFileSync('package.json', JSON.stringify(x));"
+          node -e "var x = JSON.parse(fs.readFileSync('package-lock.json')); x.version = '${{ inputs.version }}'; fs.writeFileSync('package-lock.json', JSON.stringify(x));"
+          mkdir sdist
+          npm pack --pack-destination sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: couchnode-columnar-${{ inputs.version }}-sdist
+          path: |
+            ./sdist/*.tgz
