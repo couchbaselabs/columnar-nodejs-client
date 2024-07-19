@@ -39,6 +39,7 @@ config.json
 /deps/couchbase-cxx-cache
 *.tar.gz
 *.pem
+!/lib/nonProdCertificates/*.pem
 
 # Extra stuff
 /dist/
