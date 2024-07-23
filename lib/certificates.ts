@@ -10,7 +10,7 @@ export class Certificates {
    */
   public static getNonprodCertificates(): string[] {
     const basePath = path.resolve(path.dirname(__filename), '..')
-    const certPath = path.join(basePath, 'lib', 'nonprodCertificates')
+    const certPath = path.join(basePath, 'dist', 'nonprodCertificates')
     const certificates: string[] = []
     fs.readdirSync(certPath).forEach((fileName) => {
       certificates.push(fs.readFileSync(path.join(certPath, fileName), 'utf-8'))
