@@ -9,11 +9,6 @@ async function main() {
 
   const credential = new columnar.Credential(username, password)
   const cluster = columnar.createInstance(clusterConnStr, credential, {
-    timeoutOptions: {
-      queryTimeout: 10000,
-      connectTimeout: 2000,
-      dispatchTimeout: 5000,
-    },
     securityOptions: {
       trustOnlyCertificates: columnar.Certificates.getNonprodCertificates(),
     },

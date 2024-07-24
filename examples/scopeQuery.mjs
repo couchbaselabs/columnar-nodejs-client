@@ -8,33 +8,33 @@ async function main() {
   // User Input ends here.
 
   const credential = new Credential(username, password)
-  const cluster = createInstance(clusterConnStr, credential, {
+  const scope = createInstance(clusterConnStr, credential, {
     securityOptions: {
       trustOnlyCertificates: Certificates.getNonprodCertificates(),
     },
   })
+    .database("travel-sample")
+    .scope("inventory")
 
   // Execute a streaming query with positional arguments.
-  let qs = "SELECT * FROM `travel-sample`.inventory.airline LIMIT 10;"
-  let res = await cluster.executeQuery(qs)
+  let qs = "SELECT * FROM airline LIMIT 10;"
+  let res = await scope.executeQuery(qs)
   for await (let row of res.rows()) {
     console.log("Found row: ", row)
   }
   console.log("Metadata: ", res.metadata())
 
   // Execute a streaming query with positional arguments.
-  qs =
-    "SELECT * FROM `travel-sample`.inventory.airline WHERE country=$1 LIMIT $2;"
-  res = await cluster.executeQuery(qs, { parameters: ["United States", 10] })
+  qs = "SELECT * FROM airline WHERE country=$1 LIMIT $2;"
+  res = await scope.executeQuery(qs, { parameters: ["United States", 10] })
   for await (let row of res.rows()) {
     console.log("Found row: ", row)
   }
   console.log("Metadata: ", res.metadata())
 
   // Execute a streaming query with named parameters.
-  qs =
-    "SELECT * FROM `travel-sample`.inventory.airline WHERE country=$country LIMIT $limit;"
-  res = await cluster.executeQuery(qs, {
+  qs = "SELECT * FROM airline WHERE country=$country LIMIT $limit;"
+  res = await scope.executeQuery(qs, {
     parameters: { country: "United States", limit: 10 },
   })
   for await (let row of res.rows()) {
