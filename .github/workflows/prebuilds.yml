@@ -171,7 +171,7 @@ jobs:
           mkdir output
           mv $COUCHNODE_COLUMNAR_PKG output
         env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-coulumnar-${{ inputs.version }}-linux-x64-napi.tgz
+          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-linux-x64-napi.tgz
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1
@@ -244,7 +244,7 @@ jobs:
           mkdir output
           mv $COUCHNODE_COLUMNAR_PKG output
         env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-coulumnar-${{ inputs.version }}-darwin-arm64-napi.tgz
+          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-darwin-arm64-napi.tgz
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1
@@ -326,7 +326,7 @@ jobs:
           mkdir output
           mv $COUCHNODE_COLUMNAR_PKG output
         env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-coulumnar-${{ inputs.version }}-darwin-x64-napi.tgz
+          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-darwin-x64-napi.tgz
       - uses: actions/upload-artifact@v4
         with:
           retention-days: 1
