@@ -304,11 +304,6 @@ export interface QueryOptions {
   scanConsistency?: QueryScanConsistency
 
   /**
-   * The returned client context id for this query.
-   */
-  clientContextId?: string
-
-  /**
    * Indicates whether this query should be executed with a specific priority level.
    */
   priority?: boolean
@@ -317,12 +312,6 @@ export interface QueryOptions {
    * Indicates whether this query should be executed in read-only mode.
    */
   readOnly?: boolean
-
-  /**
-   * Specifies the context within which this query should be executed.  This can be
-   * scoped to a scope or a collection within the dataset.
-   */
-  queryContext?: string
 
   /**
    * Specifies any additional parameters which should be passed to the query engine
