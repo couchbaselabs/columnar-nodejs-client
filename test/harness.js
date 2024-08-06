@@ -53,31 +53,31 @@ var TEST_CONFIG = {
   features: [],
 }
 
-if (process.env.CNCSTR !== undefined) {
-  TEST_CONFIG.connstr = process.env.CNCSTR
+if (process.env.NCBCCCSTR !== undefined) {
+  TEST_CONFIG.connstr = process.env.NCBCCCSTR
 }
-if (process.env.CNCVER !== undefined) {
+if (process.env.NCBCCCVER !== undefined) {
   assert(!!TEST_CONFIG.connstr, 'must not specify a version without a connstr')
-  var ver = process.env.CNCVER
+  var ver = process.env.NCBCCCVER
   var major = semver.major(ver)
   var minor = semver.minor(ver)
   var patch = semver.patch(ver)
   TEST_CONFIG.version = new ServerVersion(major, minor, patch)
 }
-if (process.env.CNDATABASE !== undefined) {
-  TEST_CONFIG.database = process.env.CNDATABASE
+if (process.env.NCBCCDATABASE !== undefined) {
+  TEST_CONFIG.database = process.env.NCBCCDATABASE
 }
-if (process.env.CNSCOPE !== undefined) {
-  TEST_CONFIG.scope = process.env.CNSCOPE
+if (process.env.NCBCCSCOPE !== undefined) {
+  TEST_CONFIG.scope = process.env.NCBCCSCOPE
 }
-if (process.env.CNUSER !== undefined) {
-  TEST_CONFIG.user = process.env.CNUSER
+if (process.env.NCBCCUSER !== undefined) {
+  TEST_CONFIG.user = process.env.NCBCCUSER
 }
-if (process.env.CNPASS !== undefined) {
-  TEST_CONFIG.pass = process.env.CNPASS
+if (process.env.NCBCCPASS !== undefined) {
+  TEST_CONFIG.pass = process.env.NCBCCPASS
 }
-if (process.env.CNFEAT !== undefined) {
-  var featureStrs = process.env.CNFEAT.split(',')
+if (process.env.NCBCCFEAT !== undefined) {
+  var featureStrs = process.env.NCBCCFEAT.split(',')
   featureStrs.forEach((featureStr) => {
     var featureName = featureStr.substr(1)
 

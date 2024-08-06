@@ -9,7 +9,7 @@ const {
   JsonDeserializer,
 } = require('../lib/deserializers')
 
-describe('#analytics', function () {
+describe('#columnar', function () {
   before(async function () {
     H.skipIfIntegrationDisabled(this)
   })
@@ -69,6 +69,22 @@ describe('#analytics', function () {
       readOnly: true,
       scanConsistency: QueryScanConsistency.NotBounded,
       priority: true,
+    })
+
+    for await (const row of res.rows()) {
+      results.push(row)
+    }
+
+    assert.equal(results.length, 1)
+    assert.isTrue(results.at(0)['$1'])
+  })
+
+  it('should work with positional parameters', async function () {
+    const results = []
+    const qs = `SELECT $2=1`
+
+    let res = await H.c.executeQuery(qs, {
+      parameters: [undefined, 1],
     })
 
     for await (const row of res.rows()) {
