@@ -36,8 +36,9 @@ export class ConnSpec {
     }
 
     if (parts[2]) {
-      spec.scheme = parts[2]
-      // TODO:  for columnar we _require_ couchbases
+      if (parts[2] !== "couchbases") {
+        throw new Error("Invalid connection string; must start with secure scheme \"couchbases://\", but got: " + parts[2])
+      }
     } else {
       spec.scheme = 'couchbases'
     }
