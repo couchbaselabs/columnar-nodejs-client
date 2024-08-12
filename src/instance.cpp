@@ -5,6 +5,7 @@ namespace couchnode
 
 Instance::Instance()
   : _cluster(couchbase::core::cluster(_io))
+  , _agent(couchbase::core::columnar::agent(_io, { { _cluster } }))
 {
   _ioThread = std::thread([this]() {
     try {

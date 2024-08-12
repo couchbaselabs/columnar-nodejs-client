@@ -176,9 +176,7 @@ Connection::jsQuery(const Napi::CallbackInfo& info)
     }
   };
 
-  couchbase::core::columnar::agent agent{ this->_instance->_io, { { this->_instance->_cluster } } };
-
-  agent.execute_query(
+  this->_instance->_agent.execute_query(
     options,
     [cookie = std::move(cookie), handler = std::move(handler)](
       couchbase::core::columnar::query_result resp, couchbase::core::columnar::error err) mutable {
