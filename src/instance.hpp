@@ -22,6 +22,7 @@ public:
   asio::io_context _io;
   std::thread _ioThread;
   couchbase::core::cluster _cluster;
+  couchbase::core::columnar::agent _agent;
 };
 
 } // namespace couchnode
