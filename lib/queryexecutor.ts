@@ -38,15 +38,15 @@ export class QueryExecutor {
           scope_name: this._scopeName,
           priority: options.priority,
           positional_parameters:
-            options.parameters && Array.isArray(options.parameters)
-              ? options.parameters.map((v) => JSON.stringify(v ?? null))
+            options.positionalParameters
+              ? options.positionalParameters.map((v) => JSON.stringify(v ?? null))
               : [],
           named_parameters:
-            options.parameters && !Array.isArray(options.parameters)
+            options.namedParameters
               ? Object.fromEntries(
-                  Object.entries(options.parameters as { [key: string]: any })
-                    .filter(([, v]) => v !== undefined)
-                    .map(([k, v]) => [k, JSON.stringify(v)])
+                  Object.entries(options.namedParameters as { [key: string]: any })
+                      .filter(([, v]) => v !== undefined)
+                      .map(([k, v]) => [k, JSON.stringify(v)])
                 )
               : {},
           read_only: options.readOnly,

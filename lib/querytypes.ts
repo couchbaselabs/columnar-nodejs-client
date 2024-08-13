@@ -42,7 +42,7 @@ export class QueryResult {
   metadata(): QueryMetaData {
     const metadata = this._cppResult.metadata()
     if (!metadata) {
-      throw new ColumnarError(
+      throw new Error(
         'Metadata is only available once all rows have been iterated'
       )
     }
@@ -292,9 +292,14 @@ export enum QueryScanConsistency {
  */
 export interface QueryOptions {
   /**
-   * Values to be used for the placeholders within the query.
+   * Positional values to be used for the placeholders within the query.
    */
-  parameters?: { [key: string]: any } | any[]
+  positionalParameters?: any[]
+
+  /**
+   * Named values to be used for the placeholders within the query.
+   */
+  namedParameters?: { [key: string]: any }
 
   /**
    * Specifies the consistency requirements when executing the query.

@@ -11,10 +11,9 @@ import * as errs from './errors'
  */
 export function queryScanConsistencyToCpp(
   mode: QueryScanConsistency | undefined
-): CppColumnarQueryScanConsistency {
-  // Unspecified is allowed, and means no sync durability.
-  if (mode === null || mode === undefined) {
-    return binding.columnar_query_scan_consistency.not_bounded
+): CppColumnarQueryScanConsistency | undefined {
+  if (!mode) {
+    return undefined
   }
 
   if (mode === QueryScanConsistency.NotBounded) {
@@ -23,7 +22,7 @@ export function queryScanConsistencyToCpp(
     return binding.columnar_query_scan_consistency.request_plus
   }
 
-  throw new errs.ColumnarError('Invalid query scan consistency provided')
+  throw new Error('Invalid query scan consistency provided')
 }
 
 /**
