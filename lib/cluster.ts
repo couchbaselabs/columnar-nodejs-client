@@ -362,8 +362,6 @@ export class Cluster {
       dsnObj.options['dispatch_timeout'] = this.dispatchTimeout.toString()
     }
 
-    const connStr = dsnObj.toString()
-
     const authOpts: CppClusterCredentials = {}
 
     if (this._credential) {
@@ -396,12 +394,17 @@ export class Cluster {
         // TODO: log warning?
         securityOpts.trustOnlyCapella = true
       }
+      if (typeof this._securityOptions.verifyServerCertificates === 'boolean' && !this._securityOptions.verifyServerCertificates) {
+        dsnObj.options['tls_verify'] = "none"
+      }
     } else {
       securityOpts.trustOnlyCapella = true
     }
     if (this._securityOptions.cipherSuites) {
       securityOpts.cipherSuites = this._securityOptions.cipherSuites
     }
+
+    const connStr = dsnObj.toString()
 
     this._conn.connect(connStr, authOpts, securityOpts, this._dnsConfig)
   }
