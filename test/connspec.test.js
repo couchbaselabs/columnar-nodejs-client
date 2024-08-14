@@ -112,5 +112,15 @@ describe('#ConnSpec', function () {
         options: {},
       })
     })
+
+    it('should parse a query string and disable dns srv', function () {
+      var x = ConnSpec.parse('couchbases://localhost?srv=false')
+      assert.deepEqual(x, {
+        scheme: 'couchbases',
+        hosts: [['localhost', 0]],
+        bucket: '',
+        options: { enable_dns_srv: 'false' },
+      })
+    })
   })
 })
