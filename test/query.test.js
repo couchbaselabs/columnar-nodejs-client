@@ -63,7 +63,7 @@ describe('#columnar', function () {
     const qs = `SELECT $five=5`
 
     let res = await H.c.executeQuery(qs, {
-      parameters: {
+      namedParameters: {
         five: 5,
       },
       readOnly: true,
@@ -84,7 +84,7 @@ describe('#columnar', function () {
     const qs = `SELECT $2=1`
 
     let res = await H.c.executeQuery(qs, {
-      parameters: [undefined, 1],
+      positionalParameters: [undefined, 1],
     })
 
     for await (const row of res.rows()) {
@@ -124,7 +124,7 @@ describe('#columnar', function () {
         WHERE \`DatabaseName\` = ?`
 
     let res = await H.c.executeQuery(qs, {
-      parameters: [H.d.name],
+      positionalParameters: [H.d.name],
     })
 
     for await (const row of res.rows()) {
