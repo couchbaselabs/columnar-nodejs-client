@@ -14,7 +14,7 @@ async function main() {
     },
   })
 
-  // Execute a streaming query with positional arguments.
+  // Execute a streaming query.
   let qs = 'SELECT * FROM `travel-sample`.inventory.airline LIMIT 10;'
   let res = await cluster.executeQuery(qs)
   for await (let row of res.rows()) {
@@ -25,7 +25,9 @@ async function main() {
   // Execute a streaming query with positional arguments.
   qs =
     'SELECT * FROM `travel-sample`.inventory.airline WHERE country=$1 LIMIT $2;'
-  res = await cluster.executeQuery(qs, { parameters: ['United States', 10] })
+  res = await cluster.executeQuery(qs, {
+    postionalParameters: ['United States', 10],
+  })
   for await (let row of res.rows()) {
     console.log('Found row: ', row)
   }
@@ -35,7 +37,7 @@ async function main() {
   qs =
     'SELECT * FROM `travel-sample`.inventory.airline WHERE country=$country LIMIT $limit;'
   res = await cluster.executeQuery(qs, {
-    parameters: { country: 'United States', limit: 10 },
+    namedParameters: { country: 'United States', limit: 10 },
   })
   for await (let row of res.rows()) {
     console.log('Found row: ', row)

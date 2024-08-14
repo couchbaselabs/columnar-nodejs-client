@@ -1,4 +1,4 @@
-import { Certificates, Credential, createInstance } from "couchbase-columnar"
+import { Certificates, Credential, createInstance } from 'couchbase-columnar'
 
 async function main() {
   // Update this to your cluster
@@ -14,41 +14,43 @@ async function main() {
     },
   })
 
-  // Execute a streaming query with positional arguments.
-  let qs = "SELECT * FROM `travel-sample`.inventory.airline LIMIT 10;"
+  // Execute a streaming query.
+  let qs = 'SELECT * FROM `travel-sample`.inventory.airline LIMIT 10;'
   let res = await cluster.executeQuery(qs)
   for await (let row of res.rows()) {
-    console.log("Found row: ", row)
+    console.log('Found row: ', row)
   }
-  console.log("Metadata: ", res.metadata())
+  console.log('Metadata: ', res.metadata())
 
   // Execute a streaming query with positional arguments.
   qs =
-    "SELECT * FROM `travel-sample`.inventory.airline WHERE country=$1 LIMIT $2;"
-  res = await cluster.executeQuery(qs, { parameters: ["United States", 10] })
+    'SELECT * FROM `travel-sample`.inventory.airline WHERE country=$1 LIMIT $2;'
+  res = await cluster.executeQuery(qs, {
+    positionalParameters: ['United States', 10],
+  })
   for await (let row of res.rows()) {
-    console.log("Found row: ", row)
+    console.log('Found row: ', row)
   }
-  console.log("Metadata: ", res.metadata())
+  console.log('Metadata: ', res.metadata())
 
   // Execute a streaming query with named parameters.
   qs =
-    "SELECT * FROM `travel-sample`.inventory.airline WHERE country=$country LIMIT $limit;"
+    'SELECT * FROM `travel-sample`.inventory.airline WHERE country=$country LIMIT $limit;'
   res = await cluster.executeQuery(qs, {
-    parameters: { country: "United States", limit: 10 },
+    namedParameters: { country: 'United States', limit: 10 },
   })
   for await (let row of res.rows()) {
-    console.log("Found row: ", row)
+    console.log('Found row: ', row)
   }
-  console.log("Metadata: ", res.metadata())
+  console.log('Metadata: ', res.metadata())
 }
 
 main()
   .then(() => {
-    console.log("Finished.  Exiting app...")
+    console.log('Finished.  Exiting app...')
   })
   .catch((err) => {
-    console.log("ERR: ", err)
-    console.log("Exiting app...")
+    console.log('ERR: ', err)
+    console.log('Exiting app...')
     process.exit(1)
   })
