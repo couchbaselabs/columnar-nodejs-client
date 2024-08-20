@@ -27,15 +27,23 @@ QueryResult::Init(Napi::Env env, Napi::Object exports)
 QueryResult::QueryResult(const Napi::CallbackInfo& info)
   : Napi::ObjectWrap<QueryResult>(info)
 {
-  if (info.Length() > 0) {
-    auto wrapped_result =
-      *info[0].As<const Napi::External<couchbase::core::columnar::query_result>>().Data();
-    this->result_ = std::make_shared<couchbase::core::columnar::query_result>(wrapped_result);
-  }
 }
 
 QueryResult::~QueryResult()
 {
+}
+
+void
+QueryResult::setPendingOp(std::shared_ptr<couchbase::core::pending_operation> pending_op)
+{
+  this->pending_op_ = pending_op;
+}
+
+void
+QueryResult::setQueryResult(couchbase::core::columnar::query_result query_result)
+{
+  this->result_.reset();
+  this->result_ = std::make_shared<couchbase::core::columnar::query_result>(query_result);
 }
 
 Napi::Value
@@ -85,8 +93,15 @@ Napi::Value
 QueryResult::jsCancel(const Napi::CallbackInfo& info)
 {
   auto env = info.Env();
-  this->result_->cancel();
-  return Napi::Boolean::New(env, true);
+  bool okay = true;
+  if (this->pending_op_ && !this->result_) {
+    this->pending_op_->cancel();
+  } else if (this->result_) {
+    this->result_->cancel();
+  } else {
+    okay = false;
+  }
+  return Napi::Boolean::New(env, okay);
 }
 
 Napi::Value
