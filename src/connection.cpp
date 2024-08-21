@@ -160,32 +160,46 @@ Connection::jsQuery(const Napi::CallbackInfo& info)
 
   auto handler = [](Napi::Env env,
                     Napi::Function callback,
+                    QueryResult* queryResult,
                     couchbase::core::columnar::query_result resp,
                     couchbase::core::columnar::error err) mutable {
     try {
-      auto ext = Napi::External<couchbase::core::columnar::query_result>::New(env, &resp);
-
-      auto jsRes = QueryResult::constructor(env).New({ ext });
-
-      auto jsErr = cbpp_to_js(env, err);
-      callback.Call({ jsRes, jsErr });
+      if (err.ec) {
+        auto jsErr = cbpp_to_js(env, err);
+        callback.Call({ jsErr });
+      } else {
+        queryResult->setQueryResult(resp);
+        callback.Call({ env.Null() });
+      }
     } catch (const Napi::Error& e) {
-      auto jsErr = e.Value();
-      auto jsRes = env.Null();
-      callback.Call({ jsRes, jsErr });
+      callback.Call({ e.Value() });
     }
   };
 
-  this->_instance->_agent.execute_query(
+  auto queryResult = QueryResult::constructor(env).New({});
+  auto queryResultPtr = QueryResult::Unwrap(queryResult);
+
+  auto resp = this->_instance->_agent.execute_query(
     options,
-    [cookie = std::move(cookie), handler = std::move(handler)](
+    [queryResultPtr, cookie = std::move(cookie), handler = std::move(handler)](
       couchbase::core::columnar::query_result resp, couchbase::core::columnar::error err) mutable {
-      cookie.invoke([handler = std::move(handler), resp = std::move(resp), err = std::move(err)](
-                      Napi::Env env, Napi::Function callback) mutable {
-        handler(env, callback, std::move(resp), std::move(err));
+      cookie.invoke([queryResultPtr,
+                     handler = std::move(handler),
+                     resp = std::move(resp),
+                     err = std::move(err)](Napi::Env env, Napi::Function callback) mutable {
+        handler(env, callback, queryResultPtr, std::move(resp), std::move(err));
       });
     });
-  return env.Null();
+
+  if (!resp.has_value()) {
+    resObj.Set("cppQueryErr", cbpp_to_js(env, resp.error()));
+    resObj.Set("cppQueryResult", env.Null());
+    return resObj;
+  }
+  queryResultPtr->setPendingOp(resp.value());
+  resObj.Set("cppQueryErr", env.Null());
+  resObj.Set("cppQueryResult", queryResult);
+  return resObj;
 }
 
 } // namespace couchnode

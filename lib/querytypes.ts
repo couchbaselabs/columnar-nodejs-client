@@ -1,8 +1,7 @@
 import { Deserializer } from './deserializers'
-import { ColumnarError } from './errors'
+import { QueryExecutor } from './queryexecutor'
 import { Readable } from 'stream'
 import { errorFromCpp } from './bindingutilities'
-import { CppColumnarQueryResult } from './binding'
 
 /**
  * Contains the results of a columnar query.
@@ -10,21 +9,18 @@ import { CppColumnarQueryResult } from './binding'
  * @category Analytics
  */
 export class QueryResult {
-  private _cppResult: CppColumnarQueryResult
-  private _deserializer: Deserializer
+  private _executor: QueryExecutor
   private _stream: QueryResultStream
 
   /**
    * @internal
    */
-  constructor(
-    cppResult: CppColumnarQueryResult,
-    deserializer: Deserializer,
-    signal?: AbortSignal
-  ) {
-    this._cppResult = cppResult
-    this._deserializer = deserializer
-    this._stream = new QueryResultStream(cppResult, deserializer, signal)
+  constructor(executor: QueryExecutor, deserializer: Deserializer) {
+    this._executor = executor
+    if (!executor.coreQueryResult) {
+      throw new Error('Missing core QueryResult.')
+    }
+    this._stream = new QueryResultStream(this._executor, deserializer)
   }
 
   /**
@@ -35,31 +31,19 @@ export class QueryResult {
   }
 
   /**
+   * Cancel.
+   */
+  cancel(): void {
+    this._executor.triggerAbort()
+  }
+
+  /**
    * The metadata returned from the query. Only becomes available once all rows have been iterated.
    *
-   * @throws {ColumnarError} If it is called before all rows have been iterated.
+   * @throws {Error} If it is called before all rows have been iterated.
    */
-  metadata(): QueryMetaData {
-    const metadata = this._cppResult.metadata()
-    if (!metadata) {
-      throw new Error(
-        'Metadata is only available once all rows have been iterated'
-      )
-    }
-    return {
-      requestId: metadata.request_id,
-      warnings: metadata.warnings.map((warning) => ({
-        code: warning.code,
-        message: warning.message,
-      })),
-      metrics: {
-        elapsedTime: metadata.metrics.elapsed_time,
-        executionTime: metadata.metrics.execution_time,
-        resultCount: metadata.metrics.result_count,
-        resultSize: metadata.metrics.result_size,
-        processedObjects: metadata.metrics.processed_objects,
-      },
-    }
+  metadata(): QueryMetadata {
+    return this._executor.metadata()
   }
 }
 
@@ -67,22 +51,16 @@ export class QueryResult {
  * @internal
  */
 export class QueryResultStream extends Readable {
-  private _cppResult: CppColumnarQueryResult
+  private _executor: QueryExecutor
   private _deserializer: Deserializer
-  private _signal?: AbortSignal
 
-  constructor(
-    result: CppColumnarQueryResult,
-    deserializer: Deserializer,
-    signal?: AbortSignal
-  ) {
+  constructor(executor: QueryExecutor, deserializer: Deserializer) {
     super({
       objectMode: true,
       autoDestroy: false,
-      signal: signal,
+      signal: executor.abortSignal,
     })
-    this._signal = signal
-    this._cppResult = result
+    this._executor = executor
     this._deserializer = deserializer
   }
 
@@ -131,7 +109,7 @@ export class QueryResultStream extends Readable {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   override _read(size: number): void {
-    this._cppResult.nextRow((row, cppErr) => {
+    this._executor.getNextRow((row, cppErr) => {
       const err = errorFromCpp(cppErr)
       if (err) {
         return this.destroy(err)
@@ -139,6 +117,7 @@ export class QueryResultStream extends Readable {
 
       if (typeof row === 'undefined') {
         this.push(null)
+        this._executor.streamingComplete()
         return
       }
 
@@ -153,10 +132,8 @@ export class QueryResultStream extends Readable {
     error: Error | null,
     callback: (error?: Error | null) => void
   ): void {
-    if (this._cppResult) {
-      this._cppResult.cancel()
-    }
-    if (error) {
+    // Lets not send the AbortError to the callback
+    if (error && error.name !== 'AbortError') {
       callback(error)
     }
     callback(null)
@@ -168,7 +145,7 @@ export class QueryResultStream extends Readable {
  *
  * @category Analytics
  */
-export class QueryMetaData {
+export class QueryMetadata {
   /**
    * The request ID which is associated with the executed query.
    */
@@ -187,7 +164,7 @@ export class QueryMetaData {
   /**
    * @internal
    */
-  constructor(data: QueryMetaData) {
+  constructor(data: QueryMetadata) {
     this.requestId = data.requestId
     this.warnings = data.warnings
     this.metrics = data.metrics
@@ -334,4 +311,9 @@ export interface QueryOptions {
    * If not specified, defaults to the cluster's default deserializer.
    */
   deserializer?: Deserializer
+
+  /**
+   * Sets an abort signal for the query allowing the operation to be cancelled.
+   */
+  abortSignal?: AbortSignal
 }

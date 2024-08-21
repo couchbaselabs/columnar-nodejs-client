@@ -53,3 +53,15 @@ export function errorFromCpp(err: CppColumnarError | null): Error | null {
       return new errs.ColumnarError(err.message_and_ctx)
   }
 }
+
+/**
+ * @internal
+ */
+export function errorFromCanceledOp(err: errs.ColumnarError | null): boolean {
+  if (!err) {
+    return false
+  }
+  return (
+    err.message.includes('query operation') && err.message.includes('canceled')
+  )
+}

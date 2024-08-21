@@ -63,6 +63,7 @@ export class Scope {
 
     const exec = new QueryExecutor(
       this.cluster,
+      options.abortSignal,
       this._database.name,
       this._name
     )

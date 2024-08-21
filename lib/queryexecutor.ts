@@ -1,9 +1,28 @@
 /* eslint jsdoc/require-jsdoc: off */
-import { QueryOptions, QueryResult } from './querytypes'
-import { errorFromCpp, queryScanConsistencyToCpp } from './bindingutilities'
+import {
+  QueryMetadata,
+  QueryMetrics,
+  QueryOptions,
+  QueryResult,
+} from './querytypes'
+import {
+  errorFromCanceledOp,
+  errorFromCpp,
+  queryScanConsistencyToCpp,
+} from './bindingutilities'
 import { Cluster } from './cluster'
 import { JsonDeserializer } from './deserializers'
-import { CppColumnarQueryResult } from './binding'
+import { CppColumnarQueryResult, CppColumnarError } from './binding'
+
+/**
+ * @internal
+ */
+enum StreamingState {
+  NotStarted = 0,
+  Started,
+  Cancelled,
+  Complete,
+}
 
 /**
  * @internal
@@ -12,14 +31,125 @@ export class QueryExecutor {
   private _cluster: Cluster
   private _databaseName: string | undefined
   private _scopeName: string | undefined
+  private _coreQueryResult: CppColumnarQueryResult | undefined
+  private _streamingState: StreamingState
+  private _abortController: AbortController
+  private _signal: AbortSignal
 
   /**
    * @internal
    */
-  constructor(cluster: Cluster, databaseName?: string, scopeName?: string) {
+  constructor(
+    cluster: Cluster,
+    signal?: AbortSignal,
+    databaseName?: string,
+    scopeName?: string
+  ) {
     this._cluster = cluster
     this._databaseName = databaseName
     this._scopeName = scopeName
+    this._streamingState = StreamingState.NotStarted
+
+    this._abortController = new AbortController()
+    this._signal = signal
+      ? AbortSignal.any([this._abortController.signal, signal])
+      : this._abortController.signal
+
+    this._signal.addEventListener('abort', () => {
+      this.handleAbort()
+    })
+  }
+
+  /**
+  @internal
+  */
+  get coreQueryResult(): CppColumnarQueryResult | undefined {
+    return this._coreQueryResult
+  }
+
+  /**
+  @internal
+  */
+  get streamingState(): StreamingState {
+    return this._streamingState
+  }
+
+  /**
+  @internal
+  */
+  get abortSignal(): AbortSignal {
+    return this._signal
+  }
+
+  /**
+   * @internal
+   */
+  handleAbort(): void {
+    if (!this._signal.aborted) {
+      this._abortController.abort()
+    }
+
+    if (!this._coreQueryResult) {
+      return
+    }
+
+    if (
+      ![StreamingState.Cancelled, StreamingState.Complete].includes(
+        this._streamingState
+      ) &&
+      this._coreQueryResult.cancel()
+    ) {
+      this._streamingState = StreamingState.Cancelled
+    }
+  }
+
+  /**
+   * @internal
+   */
+  triggerAbort(): void {
+    this._abortController.abort()
+  }
+
+  /**
+   * @internal
+   */
+  streamingComplete(): void {
+    this._streamingState = StreamingState.Complete
+  }
+
+  /**
+   * @internal
+   */
+  metadata(): QueryMetadata {
+    const metadata = this._coreQueryResult?.metadata()
+    if (!metadata) {
+      throw new Error(
+        'Metadata is only available once all rows have been iterated'
+      )
+    }
+    return new QueryMetadata({
+      requestId: metadata.request_id,
+      warnings: metadata.warnings.map((warning) => ({
+        code: warning.code,
+        message: warning.message,
+      })),
+      metrics: new QueryMetrics({
+        elapsedTime: metadata.metrics.elapsed_time,
+        executionTime: metadata.metrics.execution_time,
+        resultCount: metadata.metrics.result_count,
+        resultSize: metadata.metrics.result_size,
+        processedObjects: metadata.metrics.processed_objects,
+      }),
+    })
+  }
+
+  /**
+   * @internal
+   */
+  getNextRow(
+    callback: (row: string, err: CppColumnarError | null) => void
+  ): void {
+    this._coreQueryResult?.nextRow(callback)
   }
 
   /**
@@ -29,26 +159,25 @@ export class QueryExecutor {
     return new Promise((resolve, reject) => {
       const deserializer = options.deserializer || new JsonDeserializer()
       const timeout = options.timeout || this._cluster.queryTimeout
-      let resp: CppColumnarQueryResult | undefined
 
-      this._cluster.conn.query(
+      const { cppQueryErr, cppQueryResult } = this._cluster.conn.query(
         {
           statement: statement,
           database_name: this._databaseName,
           scope_name: this._scopeName,
           priority: options.priority,
-          positional_parameters:
-            options.positionalParameters
-              ? options.positionalParameters.map((v) => JSON.stringify(v ?? null))
-              : [],
-          named_parameters:
-            options.namedParameters
-              ? Object.fromEntries(
-                  Object.entries(options.namedParameters as { [key: string]: any })
-                      .filter(([, v]) => v !== undefined)
-                      .map(([k, v]) => [k, JSON.stringify(v)])
+          positional_parameters: options.positionalParameters
+            ? options.positionalParameters.map((v) => JSON.stringify(v ?? null))
+            : [],
+          named_parameters: options.namedParameters
+            ? Object.fromEntries(
+                Object.entries(
+                  options.namedParameters as { [key: string]: any }
                 )
-              : {},
+                  .filter(([, v]) => v !== undefined)
+                  .map(([k, v]) => [k, JSON.stringify(v)])
+              )
+            : {},
           read_only: options.readOnly,
           scan_consistency: queryScanConsistencyToCpp(options.scanConsistency),
           raw: options.raw
@@ -60,16 +189,29 @@ export class QueryExecutor {
             : {},
           timeout: timeout,
         },
-        (res, cppErr) => {
-          resp = res
+        (cppErr) => {
           const err = errorFromCpp(cppErr)
-          if (err) {
+          if (err && !errorFromCanceledOp(err)) {
             reject(err)
             return
           }
-          resolve(new QueryResult(resp, deserializer))
+          try {
+            // this will raise an error w/ the coreQueryResult is null
+            const qRes = new QueryResult(this, deserializer)
+            resolve(qRes)
+          } catch (err) {
+            reject(err)
+          }
         }
       )
+
+      const err = errorFromCpp(cppQueryErr)
+      if (err) {
+        throw err
+      }
+
+      this._coreQueryResult = cppQueryResult
+      this._streamingState = StreamingState.Started
     })
   }
 }

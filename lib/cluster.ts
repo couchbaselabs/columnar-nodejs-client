@@ -327,7 +327,7 @@ export class Cluster {
       options = {}
     }
 
-    const exec = new QueryExecutor(this)
+    const exec = new QueryExecutor(this, options.abortSignal)
     return exec.query(statement, options)
   }
 
@@ -394,8 +394,11 @@ export class Cluster {
         // TODO: log warning?
         securityOpts.trustOnlyCapella = true
       }
-      if (typeof this._securityOptions.verifyServerCertificates === 'boolean' && !this._securityOptions.verifyServerCertificates) {
-        dsnObj.options['tls_verify'] = "none"
+      if (
+        typeof this._securityOptions.verifyServerCertificates === 'boolean' &&
+        !this._securityOptions.verifyServerCertificates
+      ) {
+        dsnObj.options['tls_verify'] = 'none'
       }
     } else {
       securityOpts.trustOnlyCapella = true

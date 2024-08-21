@@ -48,6 +48,7 @@ var TEST_CONFIG = {
   version: new ServerVersion(0, 0, 0),
   database: 'Default',
   scope: 'Default',
+  collection: 'Default',
   user: undefined,
   pass: undefined,
   features: [],
@@ -69,6 +70,9 @@ if (process.env.NCBCCDATABASE !== undefined) {
 }
 if (process.env.NCBCCSCOPE !== undefined) {
   TEST_CONFIG.scope = process.env.NCBCCSCOPE
+}
+if (process.env.NCBCCCOLLECTION !== undefined) {
+  TEST_CONFIG.collection = process.env.NCBCCCOLLECTION
 }
 if (process.env.NCBCCUSER !== undefined) {
   TEST_CONFIG.user = process.env.NCBCCUSER
@@ -105,6 +109,7 @@ class Harness {
     this._version = TEST_CONFIG.version
     this._database = TEST_CONFIG.database
     this._scope = TEST_CONFIG.scope
+    this._collection = TEST_CONFIG.collection
     this._user = TEST_CONFIG.user
     this._pass = TEST_CONFIG.pass
     this._integrationEnabled = true
@@ -134,6 +139,14 @@ class Harness {
 
   get scopeName() {
     return this._scope
+  }
+
+  get collectionName() {
+    return this._collection
+  }
+
+  get fqdn() {
+    return `\`${this._database}\`.\`${this._scope}\`.\`${this._collection}\``
   }
 
   get integrationEnabled() {
@@ -187,7 +200,7 @@ class Harness {
   async maybeCreateScope(scope) {
     try {
       await this.maybeCreateDatabase(scope.database)
-      const qs = `CREATE SCOPE ${scope.database.name}.${scope.name} IF NOT EXISTS`
+      const qs = `CREATE SCOPE \`${scope.database.name}\`.\`${scope.name}\` IF NOT EXISTS`
       await scope.database.cluster.executeQuery(qs)
     } catch (e) {
       console.warn('Failed maybe creating scope/database: ' + e)
@@ -196,7 +209,7 @@ class Harness {
 
   async maybeCreateDatabase(database) {
     if (database.name !== 'Default') {
-      const qs = `CREATE DATABASE ${database.name} IF NOT EXISTS`
+      const qs = `CREATE DATABASE \`${database.name}\` IF NOT EXISTS`
       await database.cluster.executeQuery(qs)
     }
   }

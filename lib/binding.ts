@@ -39,7 +39,7 @@ export interface CppDnsConfig {
 
 export interface CppColumnarQueryResult {
   nextRow(callback: (row: string, err: CppColumnarError | null) => void): void
-  cancel(): void
+  cancel(): boolean
   metadata(): CppColumnarQueryMetadata | undefined
 }
 
@@ -150,11 +150,11 @@ export interface CppConnection extends CppConnectionAutogen {
 
   query(
     options: CppColumnarQueryOptions,
-    callback: (
-      result: CppColumnarQueryResult,
-      err: CppColumnarError | null
-    ) => void
-  ): void
+    callback: (err: CppColumnarError | null) => void
+  ): {
+    cppQueryErr: CppColumnarError | null
+    cppQueryResult: CppColumnarQueryResult
+  }
 }
 
 export interface CppBinding extends CppBindingAutogen {
