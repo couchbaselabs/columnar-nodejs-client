@@ -50,6 +50,11 @@ export function errorFromCpp(err: CppColumnarError | null): Error | null {
     return null
   }
 
+  // TODO:  handle other client_errc
+  if (err.client_err_code && err.client_err_code === 'canceled') {
+    return new errs.OperationCanceledError(err.message_and_ctx)
+  }
+
   switch (err.code) {
     case binding.columnar_errc.generic:
       return new errs.ColumnarError(err.message_and_ctx)
@@ -69,16 +74,4 @@ export function errorFromCpp(err: CppColumnarError | null): Error | null {
     default:
       return new errs.ColumnarError(err.message_and_ctx)
   }
-}
-
-/**
- * @internal
- */
-export function errorFromCanceledOp(err: errs.ColumnarError | null): boolean {
-  if (!err) {
-    return false
-  }
-  return (
-    err.message.includes('query operation') && err.message.includes('canceled')
-  )
 }

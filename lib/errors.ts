@@ -73,3 +73,16 @@ export class QueryError extends ColumnarError {
     this.code = code
   }
 }
+
+/**
+ * Used to indicate an HTTP request has been canceled in the C++ core due to a client/user request to cancel.
+ * Only used internally to the SDK.
+ *
+ * @internal
+ */
+export class OperationCanceledError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = this.constructor.name
+  }
+}

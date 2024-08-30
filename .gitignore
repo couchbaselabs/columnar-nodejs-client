@@ -43,3 +43,4 @@ config.json
 
 # Extra stuff
 /dist/
+/tools/bindings.json

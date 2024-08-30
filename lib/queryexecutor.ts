@@ -22,14 +22,11 @@ import {
   QueryOptions,
   QueryResult,
 } from './querytypes'
-import {
-  errorFromCanceledOp,
-  errorFromCpp,
-  queryScanConsistencyToCpp,
-} from './bindingutilities'
+import { errorFromCpp, queryScanConsistencyToCpp } from './bindingutilities'
 import { Cluster } from './cluster'
 import { JsonDeserializer } from './deserializers'
 import { CppColumnarQueryResult, CppColumnarError } from './binding'
+import { OperationCanceledError } from './errors'
 
 /**
  * @internal
@@ -208,7 +205,7 @@ export class QueryExecutor {
         },
         (cppErr) => {
           const err = errorFromCpp(cppErr)
-          if (err && !errorFromCanceledOp(err)) {
+          if (err && !(err instanceof OperationCanceledError)) {
             reject(err)
             return
           }
