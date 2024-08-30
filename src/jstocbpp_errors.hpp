@@ -66,6 +66,12 @@ struct js_to_cbpp_t<couchbase::core::columnar::error> {
     }
 
     Napi::Error err = Napi::Error::New(env, error.ec.message());
+    std::string error_name(error.ec.category().name());
+    if(error_name.find("client_errc") != std::string::npos){
+      err.Set("client_err_code", cbpp_to_js(env, error.ec.category().message(error.ec.value())));
+    } else {
+      err.Set("core_err_code", cbpp_to_js(env, error.ec.category().message(error.ec.value())));
+    }
     err.Set("code", cbpp_to_js(env, error.ec.value()));
     err.Set("message", cbpp_to_js(env, error.message));
 

@@ -58,6 +58,7 @@ TYPE_LIST = [
     "couchbase::core::columnar::query_metrics",
     "couchbase::core::columnar::query_error_properties",
     "couchbase::core::columnar::errc",
+    "couchbase::core::columnar::client_errc",
 ]
 
 STD_COMPARATOR_TEMPLATES = ["std::less<{0}>", "std::greater<{0}>", "std::less_equal<{0}>", "std::greater_equal<{0}>"]

@@ -266,10 +266,10 @@ class FileWriter {
   }
 
   genProlog() {
-    return `//#region ${this.regionName}`
+    return `// #region ${this.regionName}`
   }
   genEpilog() {
-    return `//#endregion ${this.regionName}`
+    return `// #endregion ${this.regionName}`
   }
 
   async save(filePath) {
