@@ -3,22 +3,82 @@ name: prebuilds
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "The Release version.  Allowed format: x.y.z[-alphaN | -betaN | -rcN | -devN | -postN]"
+      is_release:
+        description: "Set to true if a release version."
         required: true
-        default: "1.0.0-dev"
+        default: false
+        type: boolean
+      sha:
+        description: "The git SHA to use for release.  Only set if needing to publish"
+        required: false
+        default: ""
+        type: string
+      version:
+        description: "The Release version.  Allowed format: x.y.z"
+        required: false
+        default: ""
         type: string
       cxx_change:
         description: "The PR number or SHA if wanting to build against a PR/SHA in the C++ SDK"
         required: false
         type: string
+  workflow_call:
+    inputs:
+      is_release:
+        description: "Set to true if a release version."
+        required: true
+        default: false
+        type: boolean
+      sha:
+        description: "The git SHA to use for release.  Only set if needing to publish"
+        required: false
+        default: ""
+        type: string
+      version:
+        description: "The Release version.  Allowed format: x.y.z"
+        required: false
+        default: ""
+        type: string
+    outputs:
+      workflow_run_id:
+        description: "The workflow run ID"
+        value: ${{ github.run_id }}
+
+
+env:
+  DEFAULT_NODE: "18"
+
 
 jobs:
+  general-info:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Output workflow info
+        run: |
+          echo "Workflow Run ID=${{ github.run_id }}"
+          echo "is_release=${{ inputs.is_release }}"
+          echo "SHA=${{ inputs.sha }}"
+          echo "version=${{ inputs.version }}"
+          echo "cxx_change=${{ inputs.cxx_change }}"
+          echo "DEFAULT_PYTHON=${{ env.DEFAULT_NODE }}"
+
+
+  validate-input:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: If release, verify SHA is provided
+        if: inputs.is_release && inputs.sha == ''
+        run: |
+          echo "::error If releasing, must provide a SHA."
+          exit 1
+
+
   lint:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
+    needs: validate-input
     strategy:
       matrix:
-        node-version: ["18.x", "20.x"]
+        node-version: ["18.x"]
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js ${{ matrix.node-version }}
@@ -32,19 +92,38 @@ jobs:
           npm ci --ignore-scripts
       - name: Run lint
         run: npm run lint
+      - name: Check deps & audit
+        if: inputs.is_release || inputs.version != ''
+        run: |
+          npm run check-deps
+          npm audit --omit=dev
+
 
   sdist:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: lint
+    outputs:
+      sdist_name: ${{ steps.create_sdist.outputs.sdist_name }}
+      ncbcc_version: ${{ steps.create_sdist.outputs.ncbcc_version }}
+      napi_version: ${{ steps.create_sdist.outputs.napi_version }}
     steps:
-      - name: Checkout
+      - name: Checkout (with SHA)
+        if: ${{ inputs.sha != '' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          submodules: recursive
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Checkout (no SHA)
+        if: ${{ inputs.sha == '' }}
         uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
           fetch-tags: true
       - name: Checkout pull-request
-        if: github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'PR_')
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'PR_') }}
         run: |
           cd deps/couchbase-cxx-client
           git fetch origin pull/$(echo "$CXX_CHG" | cut -d'_' -f 2)/head:tmp
@@ -53,7 +132,7 @@ jobs:
         env:
           CXX_CHG: ${{ inputs.cxx_change }}
       - name: Checkout branch
-        if: github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'BR_')
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.cxx_change != '' && startsWith(inputs.cxx_change, 'BR_') }}
         run: |
           cd deps/couchbase-cxx-client
           git fetch origin
@@ -74,212 +153,302 @@ jobs:
           npm ci --ignore-scripts
       - name: Set CPM cache
         run: npm run prebuild -- --configure --set-cpm-cache --use-boringssl
-      - name: Create sdist
-        id: build_sdist
+      - name: Set version (from input)
+        if: ${{ inputs.version != '' }}
         run: |
-          pwd
-          ls -alh
-          ls -alh ./lib
+          echo "NCBCC_VERSION=${{ inputs.version }}" >> $GITHUB_ENV
+      - name: Set version
+        if: ${{ inputs.version == '' && inputs.is_release }}
+        run: |
+          TMP_VERSION=$(node -e "console.log(JSON.parse(fs.readFileSync('package.json')).version)")
+          echo "NCBCC_VERSION=${TMP_VERSION%%-*}" >> $GITHUB_ENV
+      - name: Set version
+        if: ${{ inputs.version == '' && !inputs.is_release }}
+        run: |
+          TMP_VERSION=$(node -e "console.log(JSON.parse(fs.readFileSync('package.json')).version)")
+          echo "NCBCC_VERSION=$TMP_VERSION.${{ github.run_number }}" >> $GITHUB_ENV
+      - name: Create sdist with version
+        id: create_sdist
+        run: |
           rm -rf ./build
-          node -e "var x = JSON.parse(fs.readFileSync('package.json')); x.version = '${{ inputs.version }}'; fs.writeFileSync('package.json', JSON.stringify(x));"
-          node -e "var x = JSON.parse(fs.readFileSync('package-lock.json')); x.version = '${{ inputs.version }}'; fs.writeFileSync('package-lock.json', JSON.stringify(x));"
+          node -e "var x = JSON.parse(fs.readFileSync('package.json')); x.version = '$NCBCC_VERSION'; fs.writeFileSync('package.json', JSON.stringify(x));"
+          node -e "var x = JSON.parse(fs.readFileSync('package-lock.json')); x.version = '$NCBCC_VERSION'; fs.writeFileSync('package-lock.json', JSON.stringify(x));"
+          NAPI_VERSION=$(node -p "JSON.parse(fs.readFileSync('package.json')).binary.napi_versions[0]")
+          echo "napi_version=$NAPI_VERSION" >> "$GITHUB_OUTPUT"
+          echo "NCBCC_VERSION=$NCBCC_VERSION"
+          echo "ncbcc_version=$NCBCC_VERSION" >> "$GITHUB_OUTPUT"
           mkdir sdist
           npm pack --pack-destination sdist
-      - uses: actions/upload-artifact@v4
+          cd sdist
+          SDIST_NAME=$(find . -name '*.tgz' | cut -c 3- | rev | cut -c 5- | rev)
+          echo "SDIST_NAME=$SDIST_NAME"
+          echo "sdist_name=$SDIST_NAME" >> "$GITHUB_OUTPUT"
+      - name: Upload Node.js sdist
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: couchnode-columnar-${{ inputs.version }}-sdist
+          name: ncbcc-sdist
           path: |
             ./sdist/*.tgz
-      - name: Set npm pack requirements
+      - name: Cleanup sdist
         run: |
-          mkdir npmpack-reqs
-          cd npmpack-reqs
-          cp ../tsconfig.json .
-          cp -r ../lib .
-          cp ../.npmignore .
-          ls -alh
-      - uses: actions/upload-artifact@v4
+          rm -rf sdist
+      - name: Create platPackage.json
+        run: |
+          curl -o platformPackages.js ${CI_SCRIPTS_URL}/ci_scripts/platformPackages.js
+          node platformPackages.js --create-platform-package-json
+        env:
+          CI_SCRIPTS_URL: "https://raw.githubusercontent.com/couchbaselabs/sdkbuild-jenkinsfiles/master/couchnode"
+      - name: Upload platform package.json
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: couchnode-columnar-${{ inputs.version }}-npmpack-reqs
+          name: ncbcc-platform-packagejson
           path: |
-            ./npmpack-reqs
+            ./platPkg.json
+      # - name: Create test requirements
+      #   run: |
+      #     mkdir ncbcc-lib
+      #     cd ncbcc-lib
+      #     cp ../tsconfig.json .
+      #     cp ../typedoc.json .
+      #     cp ../.npmignore .
+      #     cp -r ../lib .
+      #     ls -alh
+      # - name: Upload docs requirements
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     retention-days: 1
+      #     name: ncbcc-lib
+      #     path: |
+      #       ./ncbcc-lib
 
-  linux_x86_64_prebuild:
-    runs-on: ubuntu-20.04
+
+  linux-prebuilds:
     needs: sdist
+    name: Build prebuild for linux on ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: ['ubuntu-22.04']
+        node-version: ["16"]
+        arch: ['x86_64', "arm64"]
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: couchnode-columnar-${{ inputs.version }}-sdist
-      - uses: actions/download-artifact@v4
-        with:
-          name: couchnode-columnar-${{ inputs.version }}-npmpack-reqs
+          name: ncbcc-sdist
       - name: Extract sdist source
         run: |
           ls -alh
-          tar -xvzf couchbase-columnar-$COUCHNODE_COLUMNAR_VERSION.tgz
+          SDIST_NAME=${{ needs.sdist.outputs.sdist_name }}
+          tar -xvzf $SDIST_NAME.tgz
           cp -r package/** .
           rm -rf package
-        env:
-          COUCHNODE_COLUMNAR_VERSION: ${{ inputs.version }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: docker/setup-qemu-action@v3
         with:
-          node-version: "18.x"
-      - name: Confirm Node version
-        run: node --version
-      - name: Install dependencies
+          platforms: arm64
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ github.job }}-linux-${{ matrix.arch }}-node${{ matrix.node-version }}
+      - name: Install dependencies & setup
         run: |
-          npm install --ignore-scripts
-      - name: Build binary
-        run: |
-          npm run prebuild -- --use-boringssl
-      - name: Reduce prebuild size
-        run: |
-          cd build/Release
-          ls -alh
-          cp couchbase_impl.node couchbase_impl.orig.node
-          objcopy --strip-debug --strip-unneeded couchbase_impl.node
-          ls -alh
-          cd ../..
-          mv build/Release/couchbase_impl.node .
-          rm -rf build
-          mkdir -p build/Release
-          mv couchbase_impl.node build/Release
-      - name: Edit package.json
-        run: |
-          cat > packageJsonEdit.txt <<EOF
-          let pkgJson = JSON.parse(fs.readFileSync('package.json'))
-          const idx = pkgJson.files.indexOf('scripts/*.js')
-          pkgJson.files.splice(idx, 0, 'build/**/*')
-          fs.writeFileSync('package.json', JSON.stringify(pkgJson, null, 2))
-          EOF
-          node -e "$(tr '\n' ';' < packageJsonEdit.txt)"
-      - name: Create package
-        id: create_package
-        run: |
-          ls -alh
-          npm run prepare
-          npm pack
-          ls -alh
-          rm -rf node_modules
-          PKG_NAME=$(find . -name '*.tgz' | cut -c 3-)
-          mv $PKG_NAME $COUCHNODE_COLUMNAR_PKG
-          echo "package_name=${COUCHNODE_COLUMNAR_PKG}" >> "$GITHUB_OUTPUT"
-          mkdir output
-          mv $COUCHNODE_COLUMNAR_PKG output
-        env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-linux-x64-napi.tgz
-      - uses: actions/upload-artifact@v4
+          npm install --omit=dev --ignore-scripts
+          mkdir -p output/prebuilds
+          mkdir -p output/prebuilds_debug
+          echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV
+      - name: Run in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: jacasey/columnar-node${{ matrix.node-version }}-${{ matrix.arch }}:1.0.0
+          options: >-
+            --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64'}}
+            -v ${{ github.workspace }}:/work
+            -e CN_BUILD_CONFIG=${{ env.BUILD_TYPE }}
+            -e CCACHE_DIR=/work/.ccache
+            -e CN_CACHE_OPTION=ccache
+            -e CN_VERBOSE_MAKEFILE=ON
+          run: |
+            node --version
+            cat /etc/os-release
+            ldd --version
+            ls -alh /work
+            cd /work
+            env
+            ARCH=$(node -p "process.arch")
+            PLATFORM=$(node -p "process.platform")
+            NAPI_VERSION=${{ needs.sdist.outputs.napi_version }}
+            NCBCC_VERSION=${{ needs.sdist.outputs.ncbcc_version }}
+            echo "Building binary for platform=$PLATFORM, n-api=$NAPI_VERSION, arch=$ARCH"
+            npm run prebuild -- --use-boringssl --parallel 4 --use-cmakejs-build
+            FILENAME="couchbase-columnar-v$NCBCC_VERSION-napi-$NAPI_VERSION-linux-$ARCH-boringssl"
+            cd build/$CN_BUILD_CONFIG
+            ls -alh
+            mv couchbase_impl.node $FILENAME.node
+            tar -cvzf $FILENAME-debug.tar.gz $FILENAME.node
+            mv $FILENAME-debug.tar.gz ../../output/prebuilds_debug
+            objcopy --only-keep-debug $FILENAME.node $FILENAME.debug.node
+            objcopy --strip-debug --strip-unneeded $FILENAME.node
+            objcopy --add-gnu-debuglink=$FILENAME.debug.node $FILENAME.node
+            rm $FILENAME.debug.node
+            ls -alh
+            cd ../..
+            mv build/$CN_BUILD_CONFIG/$FILENAME.node output/prebuilds
+            rm -rf build
+      - name: Upload prebuild
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: ${{ steps.create_package.outputs.package_name }}
+          name: linux-${{ matrix.arch }}-prebuild
           path: |
-            ./output/${{ steps.create_package.outputs.package_name }}
+            ./output/prebuilds/*.node
+      - name: Upload debug prebuild as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-debug-artifact-linux-${{ matrix.arch }}-prebuild
+          path: |
+            ./output/prebuilds_debug/*.tar.gz
 
-  macos_arm64_prebuild:
-    runs-on: macos-14
+
+  alpine-prebuilds:
     needs: sdist
+    name: Build prebuild for alpine on ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: ['ubuntu-22.04']
+        node-version: ["18"]
+        arch: ['x86_64', "arm64"]
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: couchnode-columnar-${{ inputs.version }}-sdist
-      - uses: actions/download-artifact@v4
-        with:
-          name: couchnode-columnar-${{ inputs.version }}-npmpack-reqs
+          name: ncbcc-sdist
       - name: Extract sdist source
         run: |
           ls -alh
-          tar -xvzf couchbase-columnar-$COUCHNODE_COLUMNAR_VERSION.tgz
+          SDIST_NAME=${{ needs.sdist.outputs.sdist_name }}
+          tar -xvzf $SDIST_NAME.tgz
           cp -r package/** .
           rm -rf package
-        env:
-          COUCHNODE_COLUMNAR_VERSION: ${{ inputs.version }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: docker/setup-qemu-action@v3
         with:
-          node-version: "18.x"
-      - name: Confirm Node version
-        run: node --version
-      - name: Install dependencies
+          platforms: arm64
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ github.job }}-alpine-${{ matrix.arch }}-node${{ matrix.node-version }}
+      - name: Create output directories
         run: |
-          npm install --ignore-scripts
-      - name: Build binary
-        run: |
-          npm run prebuild -- --use-boringssl
-      - name: Reduce prebuild size
-        run: |
-          cd build/Release
-          ls -alh
-          cp couchbase_impl.node couchbase_impl.orig.node
-          xcrun strip -Sx couchbase_impl.node
-          ls -alh
-          cd ../..
-          mv build/Release/couchbase_impl.node .
-          rm -rf build
-          mkdir -p build/Release
-          mv couchbase_impl.node build/Release
-      - name: Edit package.json
-        run: |
-          cat > packageJsonEdit.txt <<EOF
-          let pkgJson = JSON.parse(fs.readFileSync('package.json'))
-          const idx = pkgJson.files.indexOf('scripts/*.js')
-          pkgJson.files.splice(idx, 0, 'build/**/*')
-          fs.writeFileSync('package.json', JSON.stringify(pkgJson, null, 2))
-          EOF
-          node -e "$(tr '\n' ';' < packageJsonEdit.txt)"
-      - name: Create package
-        id: create_package
-        run: |
-          ls -alh
-          npm run prepare
-          npm pack
-          ls -alh
-          rm -rf node_modules
-          PKG_NAME=$(find . -name '*.tgz' | cut -c 3-)
-          mv $PKG_NAME $COUCHNODE_COLUMNAR_PKG
-          echo "package_name=${COUCHNODE_COLUMNAR_PKG}" >> "$GITHUB_OUTPUT"
-          mkdir output
-          mv $COUCHNODE_COLUMNAR_PKG output
-        env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-darwin-arm64-napi.tgz
-      - uses: actions/upload-artifact@v4
+          mkdir -p output/prebuilds
+          mkdir -p output/prebuilds_debug
+          echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV
+      - name: Run in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: jacasey/columnar-alpine319-node${{ matrix.node-version }}-${{ matrix.arch }}:1.0.0
+          options: >-
+            --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64'}}
+            -v ${{ github.workspace }}:/work
+            -e CN_BUILD_CONFIG=${{ env.BUILD_TYPE }}
+            -e CCACHE_DIR=/work/.ccache
+            -e CN_CACHE_OPTION=ccache
+            -e CN_VERBOSE_MAKEFILE=ON
+          run: |
+            node --version
+            cat /etc/os-release
+            ldd --version
+            ls -alh /work
+            cd /work
+            env
+            npm install --omit=dev --ignore-scripts
+            ARCH=$(node -p "process.arch")
+            PLATFORM=$(node -p "process.platform")
+            NAPI_VERSION=${{ needs.sdist.outputs.napi_version }}
+            NCBCC_VERSION=${{ needs.sdist.outputs.ncbcc_version }}
+            echo "Building binary for platform=$PLATFORM, n-api=$NAPI_VERSION, arch=$ARCH"
+            npm run prebuild -- --use-boringssl --parallel 4 --use-cmakejs-build
+            FILENAME="couchbase-columnar-v$NCBCC_VERSION-napi-$NAPI_VERSION-linuxmusl-$ARCH-boringssl"
+            cd build/$CN_BUILD_CONFIG
+            ls -alh
+            mv couchbase_impl.node $FILENAME.node
+            tar -cvzf $FILENAME-debug.tar.gz $FILENAME.node
+            mv $FILENAME-debug.tar.gz ../../output/prebuilds_debug
+            objcopy --only-keep-debug $FILENAME.node $FILENAME.debug.node
+            objcopy --strip-debug --strip-unneeded $FILENAME.node
+            objcopy --add-gnu-debuglink=$FILENAME.debug.node $FILENAME.node
+            rm $FILENAME.debug.node
+            ls -alh
+            cd ../..
+            mv build/$CN_BUILD_CONFIG/$FILENAME.node output/prebuilds
+            rm -rf build
+      - name: Upload prebuild
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: ${{ steps.create_package.outputs.package_name }}
+          name: linuxmusl-${{ matrix.arch }}-prebuild
           path: |
-            ./output/${{ steps.create_package.outputs.package_name }}
+            ./output/prebuilds/*.node
+      - name: Upload debug prebuild as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-debug-artifact-linuxmusl-${{ matrix.arch }}-prebuild
+          path: |
+            ./output/prebuilds_debug/*.tar.gz
 
-  macos_x86_64_prebuild:
-    runs-on: macos-13
+
+  macos-prebuilds:
     needs: sdist
+    name: Build prebuild for macos on ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-13
+            node-version: "18.x"
+            arch: "x86_64"
+          - os: macos-14
+            node-version: "18.x"
+            arch: "arm64"
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: couchnode-columnar-${{ inputs.version }}-sdist
-      - uses: actions/download-artifact@v4
-        with:
-          name: couchnode-columnar-${{ inputs.version }}-npmpack-reqs
+          name: ncbcc-sdist
       - name: Extract sdist source
         run: |
           ls -alh
-          tar -xvzf couchbase-columnar-$COUCHNODE_COLUMNAR_VERSION.tgz
+          SDIST_NAME=${{ needs.sdist.outputs.sdist_name }}
+          tar -xvzf $SDIST_NAME.tgz
           cp -r package/** .
-          rm -rf package
-        env:
-          COUCHNODE_COLUMNAR_VERSION: ${{ inputs.version }}
+          rm -rf $SDIST_NAME
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ github.job }}-macos-${{ matrix.arch }}-node${{ matrix.node-version }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18.x"
+          node-version: ${{ matrix.node-version }}
       - name: Confirm Node version
-        run: node --version
+        run: |
+          node --version
+          node -p "process.arch"
       - name: Install dependencies
         run: |
-          npm install --ignore-scripts
+          npm install --omit=dev --ignore-scripts
+          mkdir -p output/prebuilds
+          mkdir -p output/prebuilds_debug
+          echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV
       - name: Downgrade CMake
+        if: ${{ matrix.arch == 'x86_64' }}
         run: |
           brew uninstall cmake
           mkdir ~/Downloads/CMake
@@ -290,46 +459,315 @@ jobs:
           sudo "/Applications/CMake.app/Contents/bin/cmake-gui" --install=/usr/local/bin
       - name: Build binary
         run: |
-          npm run prebuild -- --use-boringssl
+          env
+          npm run prebuild -- --use-boringssl --parallel 4 --use-cmakejs-build
+        env:
+          CN_BUILD_CONFIG: ${{ env.BUILD_TYPE }}
+          CCACHE_DIR: .ccache
+          CN_CACHE_OPTION: ccache
+          CN_VERBOSE_MAKEFILE: ON
       - name: Reduce prebuild size
         run: |
-          cd build/Release
-          ls -alh
-          cp couchbase_impl.node couchbase_impl.orig.node
-          xcrun strip -Sx couchbase_impl.node
-          ls -alh
-          cd ../..
-          mv build/Release/couchbase_impl.node .
-          rm -rf build
-          mkdir -p build/Release
-          mv couchbase_impl.node build/Release
-      - name: Edit package.json
-        run: |
-          cat > packageJsonEdit.txt <<EOF
-          let pkgJson = JSON.parse(fs.readFileSync('package.json'))
-          const idx = pkgJson.files.indexOf('scripts/*.js')
-          pkgJson.files.splice(idx, 0, 'build/**/*')
-          fs.writeFileSync('package.json', JSON.stringify(pkgJson, null, 2))
-          EOF
-          node -e "$(tr '\n' ';' < packageJsonEdit.txt)"
-      - name: Create package
-        id: create_package
-        run: |
-          ls -alh
-          npm run prepare
-          npm pack
-          ls -alh
-          rm -rf node_modules
-          PKG_NAME=$(find . -name '*.tgz' | cut -c 3-)
-          mv $PKG_NAME $COUCHNODE_COLUMNAR_PKG
-          echo "package_name=${COUCHNODE_COLUMNAR_PKG}" >> "$GITHUB_OUTPUT"
-          mkdir output
-          mv $COUCHNODE_COLUMNAR_PKG output
-        env:
-          COUCHNODE_COLUMNAR_PKG: couchbase-columnar-${{ inputs.version }}-darwin-x64-napi.tgz
-      - uses: actions/upload-artifact@v4
+            ARCH=$(node -p "process.arch")
+            PLATFORM=$(node -p "process.platform")
+            NAPI_VERSION=${{ needs.sdist.outputs.napi_version }}
+            NCBCC_VERSION=${{ needs.sdist.outputs.ncbcc_version }}
+            echo "Built binary for platform=$PLATFORM, n-api=$NAPI_VERSION, arch=$ARCH"
+            FILENAME="couchbase-columnar-v$NCBCC_VERSION-napi-$NAPI_VERSION-macos-$ARCH-boringssl"
+            cd build/RelWithDebInfo
+            ls -alh
+            mv couchbase_impl.node $FILENAME.node
+            tar -cvzf $FILENAME-debug.tar.gz $FILENAME.node
+            mv $FILENAME-debug.tar.gz ../../output/prebuilds_debug
+            xcrun strip -Sx $FILENAME.node
+            ls -alh
+            cd ../..
+            mv build/$BUILD_TYPE/$FILENAME.node output/prebuilds
+            rm -rf build
+      - name: Upload prebuild
+        uses: actions/upload-artifact@v4
         with:
           retention-days: 1
-          name: ${{ steps.create_package.outputs.package_name }}
+          name: macos-${{ matrix.arch }}-prebuild
           path: |
-            ./output/${{ steps.create_package.outputs.package_name }}
+            ./output/prebuilds/*.node
+      - name: Upload debug prebuild as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-debug-artifact-macos-${{ matrix.arch }}-prebuild
+          path: |
+            ./output/prebuilds_debug/*.tar.gz
+
+
+  windows-prebuilds:
+    needs: sdist
+    name: Build prebuild for Windows on ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        node-version: ["18.x"]
+        include:
+          - os: windows-2022
+            arch: "x86_64"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-sdist
+      - name: Extract sdist source
+        run: |
+          dir
+          set SDIST_NAME=${{ needs.sdist.outputs.sdist_name }}
+          tar -xvzf %SDIST_NAME%.tgz
+          xcopy package . /E
+          rmdir package /S /Q
+        shell: cmd
+      - name: Install NASM
+        run: |
+          choco install --no-progress nasm
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Confirm Node version
+        run: |
+          node --version
+          node -p "process.arch"
+      - name: Install dependencies
+        shell: cmd
+        run: |
+          npm install --omit=dev --ignore-scripts
+      - name: Build binary
+        run: |
+          npm run prebuild -- --use-boringssl --parallel 4 --use-cmakejs-build
+        env:
+          CN_VERBOSE_MAKEFILE: ON
+      - name: Rename prebuilds
+        shell: cmd
+        run : |
+          dir /a
+          dir /a build\Release
+          md output
+          md output\prebuilds
+          md output\prebuilds_debug
+          dir /a output
+          set NAPI_VERSION=${{ needs.sdist.outputs.napi_version }}
+          set NCBCC_VERSION=${{ needs.sdist.outputs.ncbcc_version }}
+          set FILENAME=couchbase-columnar-v%NCBCC_VERSION%-napi-%NAPI_VERSION%-win32-x64-boringssl
+          move build\Release\couchbase_impl.node output\prebuilds\%FILENAME%.node
+          move build\Release\couchbase_impl.pdb output\prebuilds_debug\%FILENAME%.pdb
+          dir /a output\prebuilds
+          dir /a output\prebuilds_debug
+      - name: Upload prebuild
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: windows-${{ matrix.arch }}-prebuild
+          path: |
+            ./output/prebuilds/*.node
+      - name: Upload debug prebuild as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-debug-artifact-windows-${{ matrix.arch }}-prebuild
+          path: |
+            ./output/prebuilds_debug/*.pdb
+
+
+  validate-linux-prebuilds:
+    needs: linux-prebuilds
+    name: Validate Node.js ${{ matrix.node-version }} prebuild for linux (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['ubuntu-22.04']
+        node-version: ["16", "18", "20"]
+        arch: ['x86_64', 'arm64']
+    steps:
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-sdist
+      - name: Setup prebuild npmrc
+        run: |
+          mkdir -p prebuilds
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-prebuild
+          path: prebuilds
+      - name: Run in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:${{ matrix.node-version }}-bullseye-slim
+          options: >-
+            --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64'}}
+            -v ${{ github.workspace }}:/work
+          run: |
+            node --version
+            cd /work
+            ls -alh
+            npm init -y
+            echo "columnar_local_prebuilds=/work/prebuilds" >> .npmrc
+            cat .npmrc
+            PKG=$(find . -name '*.tgz' | cut -c 3-)
+            npm install $PKG
+            node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
+      - name: Upload Node.js prebuild as artifact
+        if: ${{ matrix.node-version == env.DEFAULT_NODE }}
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-artifact-linux-${{ matrix.arch }}-prebuild
+          path: prebuilds/*.node
+
+
+  validate-alpine-prebuilds:
+    needs: alpine-prebuilds
+    name: Validate Node.js ${{ matrix.node-version }} prebuild for alpine (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['ubuntu-22.04']
+        node-version: ["16", "18", "20"]
+        arch: ['x86_64', 'arm64']
+    steps:
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-sdist
+      - name: Setup prebuild npmrc
+        run: |
+          mkdir prebuilds
+      - uses: actions/download-artifact@v4
+        with:
+          name: linuxmusl-${{ matrix.arch }}-prebuild
+          path: prebuilds
+      - name: Run in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:${{ matrix.node-version }}-alpine
+          options: >-
+            --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64'}}
+            -v ${{ github.workspace }}:/work
+          run: |
+            node --version
+            cd /work
+            ls -alh
+            npm init -y
+            echo "columnar_local_prebuilds=/work/prebuilds" >> .npmrc
+            cat .npmrc
+            PKG=$(find . -name '*.tgz' | cut -c 3-)
+            npm install $PKG
+            node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
+      - name: Upload Node.js prebuild as artifact
+        if: ${{ matrix.node-version == env.DEFAULT_NODE }}
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-artifact-linuxmusl-${{ matrix.arch }}-prebuild
+          path: prebuilds/*.node
+
+
+  validate-macos-prebuilds:
+    needs: macos-prebuilds
+    name: Validate Node.js ${{ matrix.node-version }} prebuild for macos (${{ matrix.os == 'macos-14' && 'arm64' || 'x86_64' }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["macos-13", "macos-14"]
+        node-version: ["16", "18", "20"]
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Confirm Node version
+        run: |
+          node --version
+          node -p "process.arch"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-sdist
+      - name: Setup prebuild npmrc
+        run: |
+          mkdir prebuilds
+          echo "columnar_local_prebuilds=${{ github.workspace }}/prebuilds" >> .npmrc
+          cat .npmrc
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-${{ matrix.os == 'macos-14' && 'arm64' || 'x86_64' }}-prebuild
+          path: prebuilds
+      - name: Install w/ prebuild
+        run: |
+          npm init -y
+          PKG=$(find . -name '*.tgz' | cut -c 3-)
+          npm install $PKG --omit=dev
+          node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
+      - name: Upload Node.js prebuild as artifact
+        if: ${{ matrix.node-version == env.DEFAULT_NODE }}
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-artifact-macos-${{ matrix.os == 'macos-14' && 'arm64' || 'x86_64' }}-prebuild
+          path: prebuilds/*.node
+
+
+  validate-windows-prebuilds:
+    needs: windows-prebuilds
+    name: Validate Node.js ${{ matrix.node-version }} prebuild Windows (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["windows-latest"]
+        node-version: ["16", "18", "20"]
+        arch: ["x86_64"]
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Confirm Node version
+        run: |
+          node --version
+          node -p "process.arch"
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-sdist
+      - name: Setup install and prebuild npmrc
+        shell: cmd
+        run: |
+          dir /a
+          md prebuilds
+          echo "columnar_local_prebuilds=${{ github.workspace }}\prebuilds" >> .npmrc
+          type .npmrc
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}-prebuild
+          path: prebuilds
+      - name: Install w/ prebuild
+        run: |
+          npm init -y
+          $env:PKG_NAME=$(gci *.tgz).Name
+          gci $env:PKG_NAME
+          npm install $env:PKG_NAME
+          node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
+      - name: Upload Node.js prebuild as artifact
+        if: ${{ matrix.node-version == env.DEFAULT_NODE }}
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-artifact-windows-${{ matrix.arch }}-prebuild
+          path: prebuilds/*.node

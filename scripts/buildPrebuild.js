@@ -16,13 +16,16 @@
  */
 
 const prebuilds = require('./prebuilds')
+const os = require('os')
 
 function buildPrebuild(
   runtime,
   runtimeVersion,
   useOpenSSL,
   configure,
-  setCpmCache
+  setCpmCache,
+  useCmakeJsCompile,
+  cmakeParallel
 ) {
   runtime = runtime || process.env.CN_PREBUILD_RUNTIME || 'node'
   runtimeVersion =
@@ -38,15 +41,29 @@ function buildPrebuild(
 
   // we only want to configure if setting the CPM cache
   if (configure || setCpmCache) {
-    prebuilds.configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache)
+    prebuilds.configureBinary(
+      runtime,
+      runtimeVersion,
+      useOpenSSL,
+      setCpmCache,
+      cmakeParallel
+    )
   } else {
-    prebuilds.buildBinary(runtime, runtimeVersion, useOpenSSL)
+    prebuilds.buildBinary(
+      runtime,
+      runtimeVersion,
+      useOpenSSL,
+      useCmakeJsCompile,
+      cmakeParallel
+    )
   }
 }
 
 let configurePrebuild = false
 let setCpmCache = false
+let useCmakeJsCompile = true
 let runtime, runtimeVersion, useOpenSSL
+let cmakeParallel = 4
 const args = process.argv.slice(2)
 if (args.length > 0) {
   // --configure
@@ -106,6 +123,28 @@ if (args.length > 0) {
   if (args.includes('--use-openssl')) {
     useOpenSSL = true
   }
+
+  // --parallel=<> OR --parallel <>
+  const parallelIdx = args.findIndex((a) => a.includes('parallel'))
+  if (parallelIdx >= 0) {
+    let pv = undefined
+    if (args[parallelIdx].includes('=')) {
+      pv = args[parallelIdx].split('=')[1]
+    } else if (args.length - 1 <= parallelIdx + 1) {
+      pv = args[parallelIdx + 1]
+    }
+
+    if (pv && !isNaN(parseInt(pv))) {
+      const pvi = parseInt(pv)
+      if (pvi <= os.cpus().length) {
+        cmakeParallel = pvi
+      }
+    }
+  }
+
+  if (args.includes('--use-cmakejs-build')) {
+    useCmakeJsCompile = false
+  }
 }
 
 buildPrebuild(
@@ -113,5 +152,7 @@ buildPrebuild(
   runtimeVersion,
   useOpenSSL,
   configurePrebuild,
-  setCpmCache
+  setCpmCache,
+  useCmakeJsCompile,
+  cmakeParallel
 )
