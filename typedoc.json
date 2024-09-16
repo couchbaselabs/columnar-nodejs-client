@@ -1,5 +1,5 @@
 {
-  "entryPoints": ["./lib/couchbase.ts"],
+  "entryPoints": ["./lib/columnar.ts"],
   "out": "docs",
   "excludePrivate": true,
   "excludeInternal": true,
@@ -9,15 +9,8 @@
   },
   "categoryOrder": [
     "Core",
-    "Key-Value",
-    "Transactions",
     "Query",
-    "Views",
-    "Full Text Search",
-    "Analytics",
-    "Datastructures",
     "Management",
-    "Diagnostics",
     "Authentication",
     "Error Handling",
     "Logging"
