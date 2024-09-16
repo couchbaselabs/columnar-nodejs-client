@@ -76,6 +76,5 @@ export * from './cluster'
 export * from './credential'
 export * from './errors'
 export * from './scope'
-export * from './streamablepromises'
 
 export { NodeCallback } from './utilities'

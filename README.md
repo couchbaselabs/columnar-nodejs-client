@@ -7,10 +7,10 @@ Node.js client for [Couchbase](https://couchbase.com) Columnar
 
 Eventually the SDK will be published to npm, but in the interim a select set of packages with prebuilt binaries are available on the [Releases page](https://github.com/couchbaselabs/columnar-nodejs-client/releases).  If a packages is not available for your specific platform, see the [BUILDING page](https://github.com/couchbaselabs/columnar-nodejs-client/blob/main/BUILDING.md) for details on how to build the SDK's binary.
 
-To install the SDK from a wheel on the [Releases page](https://github.com/couchbaselabs/columnar-nodejs-client/releases):
+To install the SDK from a prebuilt-binary (a.k.a. prebuild) on the [Releases page](https://github.com/couchbaselabs/columnar-nodejs-client/releases):
 1. Download the appropriate package
 2. Unzip the downloaded file
-3. Install via npm: `npm install <path to unzipped wheel>`
+3. Install via npm: `npm install <path to unzipped prebuild>`
 
 If a compatible package is not available, the SDK's binary will need to be built from source:
 1. Follow the steps on the [BUILDING page](https://github.com/couchbaselabs/columnar-nodejs-client/blob/main/BUILDING.md)

@@ -1,12 +1,12 @@
 {
   "bugs": {
-    "url": "http://www.couchbase.com/issues/browse/JSCO"
+    "url": "https://jira.issues.couchbase.com/projects/JSCO/issues"
   },
   "description": "The official Couchbase Node.js Columnar Client Library.",
   "engines": {
     "node": ">=16"
   },
-  "homepage": "http://www.couchbase.com/communities/nodejs",
+  "homepage": "https://www.couchbase.com/developers/sdks",
   "keywords": [
     "couchbase",
     "columnar",
@@ -53,7 +53,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "http://github.com/couchbase/couchnode.git"
+    "url": "https://github.com/couchbaselabs/columnar-nodejs-client"
   },
   "version": "1.0.0-dev",
   "config": {

@@ -23,7 +23,7 @@ import { errorFromCpp } from './bindingutilities'
 /**
  * Contains the results of a columnar query.
  *
- * @category Analytics
+ * @category Query
  */
 export class QueryResult {
   private _executor: QueryExecutor
@@ -41,14 +41,16 @@ export class QueryResult {
   }
 
   /**
-   * Returns a {@link Readable} stream of rows returned from the Columnar query.
+   * Returns a [Readable](https://nodejs.org/api/stream.html#readable-streams) stream of rows returned from the Columnar query.
    */
   rows(): QueryResultStream {
     return this._stream
   }
 
   /**
-   * Cancel.
+   * Volatile: This API is subject to change at any time.
+   * 
+   * Cancel streaming the query results.
    */
   cancel(): void {
     this._executor.triggerAbort()
@@ -160,7 +162,7 @@ export class QueryResultStream extends Readable {
 /**
  * Contains the meta-data that is returned from a query.
  *
- * @category Analytics
+ * @category Query
  */
 export class QueryMetadata {
   /**
@@ -192,7 +194,7 @@ export class QueryMetadata {
  * Contains information about a warning which occurred during the
  * execution of an analytics query.
  *
- * @category Analytics
+ * @category Query
  */
 export class QueryWarning {
   /**
@@ -218,7 +220,7 @@ export class QueryWarning {
  * Contains various metrics that are returned by the server following
  * the execution of an analytics query.
  *
- * @category Analytics
+ * @category Query
  */
 export class QueryMetrics {
   /**
@@ -262,7 +264,7 @@ export class QueryMetrics {
  * Represents the various scan consistency options that are available when
  * querying against columnar.
  *
- * @category Analytics
+ * @category Query
  */
 export enum QueryScanConsistency {
   /**
@@ -282,7 +284,7 @@ export enum QueryScanConsistency {
 }
 
 /**
- * @category Analytics
+ * @category Query
  */
 export interface QueryOptions {
   /**
