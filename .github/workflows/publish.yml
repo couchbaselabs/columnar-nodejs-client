@@ -1,0 +1,217 @@
+name: publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "The git SHA to use for release.  Only set if needing to publish"
+        required: true
+        default: ""
+        type: string
+      version:
+        description: "The Release version.  Allowed format: x.y.z"
+        required: false
+        default: ""
+        type: string
+      publish_dryrun:
+        description: "Set to true to in order to do a npm publish dry run."
+        required: false
+        default: true
+        type: boolean
+      npm_tag:
+        description: "The tag value to use to publish to npm."
+        required: false
+        default: ""
+        type: choice
+        options:
+        - ''
+        - dev
+        - beta
+        - rc
+      prebuilds_workflow_id:
+        description: "The workflow run ID of a prebuilds workflow run.  Set if wanting to use prebuilds from an already completed run."
+        required: false
+        default: ""
+        type: string
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: If release, verify SHA is provided
+        if: ${{ inputs.sha == '' || inputs.sha.length != 40 }}
+        run: |
+          echo "::error Must provide a SHA."
+          exit 1
+      - name: If release version, npm tag also provided
+        if: ${{ inputs.version != '' && inputs.npm_tag == '' }}
+        run: |
+          echo "::error If releasing by setting a release version, must provide a npm tag."
+          exit 1
+
+  build-prebuilds:
+    if: ${{ inputs.prebuilds_workflow_id == '' }}
+    needs: validate-input
+    uses: ./.github/workflows/prebuilds.yml
+    with:
+      is_release: true
+      sha: ${{ inputs.sha }}
+      version: ${{ inputs.version }}
+
+  upload-api-docs:
+    name: Upload to API docs
+    needs: build-prebuilds
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        if: inputs.sha != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.DEFAULT_NODE }}
+      - name: Confirm Node version
+        run: |
+          node --version
+          node -p "process.arch"
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts
+          mkdir -p build/Release
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        with:
+          name: ncbcc-artifact-linux-x86_64-prebuild
+          path: build/Release
+          run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        with:
+          name: ncbcc-artifact-linux-x86_64-prebuild
+          path: build/Release
+          run-id: ${{ inputs.prebuilds_workflow_id }}
+          github-token: ${{ github.token }}
+      - name: Build docs
+        run: |
+          ls -alh
+          ls -alh build/Release
+          npm run build-docs
+          ls -alh docs
+      - name: Upload Node.js API docs as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-api-docs
+          path: docs/
+
+  upload-npm:
+    name: Upload to npm (prebuilds already built)
+    needs: build-prebuilds
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        with:
+          name: ncbcc-sdist
+          run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        with:
+          name: ncbcc-sdist
+          run-id: ${{ inputs.prebuilds_workflow_id }}
+          github-token: ${{ github.token }}
+      - name: Extract sdist source
+        run: |
+          ls -alh
+          SDIST=$(find . -name '*.tgz' | cut -c 3-)
+          tar -xvzf $SDIST
+          cp -r package/** .
+          rm -rf package
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        with:
+          name: ncbcc-lib
+          run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        with:
+          name: ncbcc-lib
+          run-id: ${{ inputs.prebuilds_workflow_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        with:
+          pattern: ncbcc-artifact-*
+          path: prebuilds
+          merge-multiple: true
+          run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        with:
+          pattern: ncbcc-artifact-*
+          path: prebuilds
+          merge-multiple: true
+          run-id: ${{ inputs.prebuilds_workflow_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        with:
+          name: ncbcc-platform-packagejson
+          run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        with:
+          name: ncbcc-platform-packagejson
+          run-id: ${{ inputs.prebuilds_workflow_id }}
+          github-token: ${{ github.token }}
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.DEFAULT_NODE }}
+      - name: Confirm Node version
+        run: |
+          node --version
+          node -p "process.arch"
+      - name: Build platform packages
+        run: |
+          ls -alh prebuilds
+          curl -o platformPackages.js ${CI_SCRIPTS_URL}/ci_scripts/platformPackages.js
+          node platformPackages.js --build-platform-packages --d ${{ github.workspace }}/prebuilds
+          rm platPkg.json
+          ls -alh prebuilds
+          cat package.json
+        env:
+          CI_SCRIPTS_URL: "https://raw.githubusercontent.com/couchbaselabs/sdkbuild-jenkinsfiles/master/couchnode"
+      - name: Create sdist artifact
+        run: |
+          npm install --ignore-scripts
+          mkdir sdist
+          npm pack --pack-destination sdist
+      - name: Upload Node.js sdist as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-artifact-sdist
+          path: |
+            ./sdist/*.tgz
+      - name: Publish to npm
+        run: |
+          env
+          rm -rf sdist
+          curl -o publish_to_npm.sh ${CI_SCRIPTS_URL}/ci_scripts/publish_to_npm.sh
+          chmod 755 publish_to_npm.sh
+          ./publish_to_npm.sh ${{ github.workspace }} ${{ github.workspace }}/prebuilds
+        env:
+          CI_SCRIPTS_URL: "https://raw.githubusercontent.com/couchbaselabs/sdkbuild-jenkinsfiles/master/couchnode"
+          PUBLISH_DRY_RUN: "${{ inputs.publish_dryrun }}"
+          NPM_TAG: ${{ inputs.npm_tag }}   

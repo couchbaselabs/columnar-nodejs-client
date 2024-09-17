@@ -45,7 +45,13 @@ CXXCBC_CACHE_DIR =
   path.join(CN_ROOT, 'deps', 'couchbase-cxx-cache')
 ENV_TRUE = ['true', '1', 'y', 'yes', 'on']
 
-function buildBinary(runtime, runtimeVersion, useOpenSSL) {
+function buildBinary(
+  runtime,
+  runtimeVersion,
+  useOpenSSL,
+  useCmakeJsCompile,
+  cmakeParallel
+) {
   runtime = runtime || process.env.CN_PREBUILD_RUNTIME || 'node'
   runtimeVersion =
     runtimeVersion ||
@@ -91,11 +97,13 @@ function buildBinary(runtime, runtimeVersion, useOpenSSL) {
 
   const cmakejsBuildCmd = [
     cmakejs,
-    'compile',
+    useCmakeJsCompile ? 'compile' : 'build',
     '--runtime',
     runtime,
     '--runtime-version',
     runtimeVersion,
+    '--parallel',
+    cmakeParallel,
   ]
 
   const buildConfig = process.env.CN_BUILD_CONFIG
@@ -147,13 +155,26 @@ function buildBinary(runtime, runtimeVersion, useOpenSSL) {
     cmakejsBuildCmd.push(`--CDCMAKE_SYSTEM_VERSION=${cmakeSystemVersion}`)
   }
 
+  const cacheOption = process.env.CN_CACHE_OPTION
+  if (cacheOption) {
+    cmakejsBuildCmd.push(`--CDCACHE_OPTION=${cacheOption}`)
+  }
+
+  console.log('cmakejsBuildCmd=', cmakejsBuildCmd)
+
   const cmakejsProc = proc.spawnSync(process.execPath, cmakejsBuildCmd, {
     stdio: 'inherit',
   })
   process.exit(cmakejsProc.status)
 }
 
-function configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache) {
+function configureBinary(
+  runtime,
+  runtimeVersion,
+  useOpenSSL,
+  setCpmCache,
+  cmakeParallel
+) {
   runtime = runtime || process.env.CN_PREBUILD_RUNTIME || 'node'
   runtimeVersion =
     runtimeVersion ||
@@ -185,6 +206,8 @@ function configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache) {
     runtime,
     '--runtime-version',
     runtimeVersion,
+    '--parallel',
+    cmakeParallel,
   ]
 
   if (setCpmCache) {
@@ -214,7 +237,7 @@ function configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache) {
       // BoringSSL path: 'couchbase-cxx-cache/boringssl/<SHA>/boringssl/crypto_test_data.cc'
       // This edit reduces the size of the tarball by 60%
       let boringDir = path.join(CXXCBC_CACHE_DIR, 'boringssl')
-      if(fs.existsSync(boringDir)){
+      if (fs.existsSync(boringDir)) {
         let files = fs.readdirSync(boringDir)
         if (
           files.length == 1 &&
@@ -235,7 +258,10 @@ function configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache) {
     if (fs.existsSync(cpmDir)) {
       let cpmFiles = fs.readdirSync(cpmDir)
       if (cpmFiles.length == 1 && cpmFiles[0].endsWith('.cmake')) {
-        let cpmContent = fs.readFileSync(path.join(cpmDir, cpmFiles[0]), 'utf-8')
+        let cpmContent = fs.readFileSync(
+          path.join(cpmDir, cpmFiles[0]),
+          'utf-8'
+        )
         cpmContent = cpmContent.replace(/Git REQUIRED/g, 'Git')
         fs.writeFileSync(path.join(cpmDir, cpmFiles[0]), cpmContent, 'utf-8')
       }
@@ -245,16 +271,16 @@ function configureBinary(runtime, runtimeVersion, useOpenSSL, setCpmCache) {
 }
 
 function getLocalPrebuild(dir) {
-  let COUCHBASE_LOCAL_PREBUILDS = [
+  let COLUMNAR_LOCAL_PREBUILDS = [
     'build',
     path.join('build', 'Release'),
     path.join('build', 'RelWithDebInfo'),
     path.join('build', 'Debug'),
   ]
   let localPrebuild = undefined
-  for (let i = 0; i < COUCHBASE_LOCAL_PREBUILDS.length; i++) {
+  for (let i = 0; i < COLUMNAR_LOCAL_PREBUILDS.length; i++) {
     try {
-      const localPrebuildDir = path.join(dir, COUCHBASE_LOCAL_PREBUILDS[i])
+      const localPrebuildDir = path.join(dir, COLUMNAR_LOCAL_PREBUILDS[i])
       const files = readdirSync(localPrebuildDir).filter(matchBuild)
       localPrebuild = files[0] && path.join(localPrebuildDir, files[0])
       if (localPrebuild) break
@@ -362,11 +388,16 @@ function matchingPlatformPrebuild(filename, useElectronRuntime = false) {
   if (['index.js', 'package.json', 'README.md'].includes(filename)) {
     return false
   }
-  const _runtime = useElectronRuntime
-    ? 'electron'
-    : runtime === 'node'
-    ? 'napi'
-    : runtime
+
+  let _runtime = ''
+  if (useElectronRuntime) {
+    _runtime = 'electron'
+  } else if (runtime === 'node') {
+    _runtime = 'napi'
+  } else {
+    console.log(`Unsupported runtime: ${runtime}`)
+    return false
+  }
   const tokens = filename.split('-')
   // filename format:
   //   couchbase-v<pkg-version>-<runtime>-v<runtime-version>-<platform>-<arch>-<ssl-type>.node
@@ -421,11 +452,14 @@ function resolvePrebuild(
   { runtimeResolve = true, useElectronRuntime = false } = {}
 ) {
   dir = path.resolve(dir || '.')
-  const _runtime = useElectronRuntime
-    ? 'electron'
-    : runtime === 'node'
-    ? 'napi'
-    : runtime
+  let _runtime = ''
+  if (useElectronRuntime) {
+    _runtime = 'electron'
+  } else if (runtime === 'node') {
+    _runtime = 'napi'
+  } else {
+    throw new Error(`Unsupported runtime: ${runtime}`)
+  }
   try {
     const localPrebuild = getLocalPrebuild(dir)
     if (localPrebuild) {

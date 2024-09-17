@@ -32,7 +32,7 @@ if (hasLocalPrebuild()) {
 }
 
 function getLocalPrebuild() {
-  const localPrebuildsName = `npm_config_couchbase_local_prebuilds`
+  const localPrebuildsName = `npm_config_columnar_local_prebuilds`
   return process.env[localPrebuildsName]
 }
 
