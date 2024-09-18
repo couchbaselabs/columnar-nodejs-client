@@ -47,13 +47,9 @@ describe('#Cluster', function () {
     assert.equal(cluster.resolveTimeout, 30000)
   })
 
-  it('should correctly set all security options', function () {
+  it('should correctly set security options', function () {
     let options = {
       securityOptions: {
-        trustOnlyCapella: true,
-        trustOnlyPemFile: "pemFile",
-        trustOnlyPemString: "pemString",
-        trustOnlyCertificates: ["cert1", "cert2"],
         trustOnlyPlatform: true,
         verifyServerCertificates: false,
         cipherSuites: ["suite"]
@@ -66,13 +62,45 @@ describe('#Cluster', function () {
         options
     )
 
-    assert.isTrue(cluster._securityOptions.trustOnlyCapella)
-    assert.strictEqual(cluster._securityOptions.trustOnlyPemFile, "pemFile")
-    assert.strictEqual(cluster._securityOptions.trustOnlyPemString, "pemString")
-    assert.deepEqual(cluster._securityOptions.trustOnlyCertificates, ["cert1", "cert2"])
     assert.isTrue(cluster._securityOptions.trustOnlyPlatform)
     assert.isFalse(cluster._securityOptions.verifyServerCertificates)
     assert.deepEqual(cluster._securityOptions.cipherSuites, ["suite"])
+    assert.isUndefined(cluster._securityOptions.trustOnlyCapella)
+    assert.isUndefined(cluster._securityOptions.trustOnlyPemFile)
+    assert.isUndefined(cluster._securityOptions.trustOnlyCertificates)
+    assert.isUndefined(cluster._securityOptions.trustOnlyPemString)
+  })
+
+  it('should default to trustOnlyCapella if no options are set', function () {
+    const cluster = H.lib.Cluster.createInstance(
+        H.connStr,
+        H.credentials,
+    )
+
+    assert.isTrue(cluster._securityOptions.trustOnlyCapella)
+    assert.isUndefined(cluster._securityOptions.trustOnlyPemFile)
+    assert.isUndefined(cluster._securityOptions.trustOnlyCertificates)
+    assert.isUndefined(cluster._securityOptions.trustOnlyPemString)
+    assert.isUndefined(cluster._securityOptions.trustOnlyPlatform)
+    assert.isUndefined(cluster._securityOptions.verifyServerCertificates)
+    assert.isUndefined(cluster._securityOptions.cipherSuites)
+  })
+
+  it('should throw an error if multiple trustOnly options are set', function () {
+    let options = {
+      securityOptions: {
+        trustOnlyCapella: true,
+        trustOnlyPemFile: "pemFile",
+      }
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(
+          H.connStr,
+          H.credentials,
+          options
+      )
+    }, Error)
   })
 
   it('should correctly set dns options', function () {
@@ -95,7 +123,7 @@ describe('#Cluster', function () {
     assert.strictEqual(cluster._dnsConfig.dnsSrvTimeout, 3000)
   })
 
-  it ('should correctly set cluster-level deserializer', function() {
+  it ('should correctly set cluster-level deserializer', function () {
     let options = {
       deserializer: new PassthroughDeserializer()
     }
