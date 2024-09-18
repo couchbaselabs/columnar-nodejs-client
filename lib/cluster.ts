@@ -200,6 +200,7 @@ export class Cluster {
   private _securityOptions: SecurityOptions
   private _conn: CppConnection
   private _dnsConfig: DnsConfig | null
+  private _deserializer: Deserializer
 
   /**
    * @internal
@@ -252,6 +253,13 @@ export class Cluster {
 
   /**
   @internal
+  */
+  get deserializer(): Deserializer {
+    return this._deserializer
+  }
+
+  /**
+  @internal
   @deprecated Use the static sdk-level {@link createInstance} method instead.
   */
   constructor(
@@ -285,6 +293,7 @@ export class Cluster {
     this._bootstrapTimeout = options.timeoutOptions?.connectTimeout
     this._connectTimeout = options.timeoutOptions?.socketConnectTimeout
     this._resolveTimeout = options.timeoutOptions?.resolveTimeout
+    this._deserializer = options.deserializer || new JsonDeserializer()
 
     this._credential = credential
 
