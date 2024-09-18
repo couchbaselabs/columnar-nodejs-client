@@ -24,7 +24,6 @@ import {
 } from './querytypes'
 import { errorFromCpp, queryScanConsistencyToCpp } from './bindingutilities'
 import { Cluster } from './cluster'
-import { JsonDeserializer } from './deserializers'
 import { CppColumnarQueryResult, CppColumnarError } from './binding'
 import { OperationCanceledError } from './errors'
 
@@ -171,7 +170,7 @@ export class QueryExecutor {
    */
   query(statement: string, options: QueryOptions): Promise<QueryResult> {
     return new Promise((resolve, reject) => {
-      const deserializer = options.deserializer || new JsonDeserializer()
+      const deserializer = options.deserializer || this._cluster.deserializer
       const timeout = options.timeout || this._cluster.queryTimeout
 
       const { cppQueryErr, cppQueryResult } = this._cluster.conn.query(

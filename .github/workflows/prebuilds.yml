@@ -60,7 +60,7 @@ jobs:
           echo "SHA=${{ inputs.sha }}"
           echo "version=${{ inputs.version }}"
           echo "cxx_change=${{ inputs.cxx_change }}"
-          echo "DEFAULT_PYTHON=${{ env.DEFAULT_NODE }}"
+          echo "DEFAULT_NODE=${{ env.DEFAULT_NODE }}"
 
 
   validate-input:
@@ -206,22 +206,22 @@ jobs:
           name: ncbcc-platform-packagejson
           path: |
             ./platPkg.json
-      # - name: Create test requirements
-      #   run: |
-      #     mkdir ncbcc-lib
-      #     cd ncbcc-lib
-      #     cp ../tsconfig.json .
-      #     cp ../typedoc.json .
-      #     cp ../.npmignore .
-      #     cp -r ../lib .
-      #     ls -alh
-      # - name: Upload docs requirements
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     retention-days: 1
-      #     name: ncbcc-lib
-      #     path: |
-      #       ./ncbcc-lib
+      - name: Copy over lib/ and other requirements for pack, docs, etc.
+        run: |
+          mkdir ncbcc-lib
+          cd ncbcc-lib
+          cp ../tsconfig.json .
+          cp ../typedoc.json .
+          cp ../.npmignore .
+          cp -r ../lib .
+          ls -alh
+      - name: Upload requirements for pack, docs, etc.
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-lib
+          path: |
+            ./ncbcc-lib
 
 
   linux-prebuilds:
