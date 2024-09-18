@@ -399,7 +399,19 @@ export class Cluster {
 
     const securityOpts: CppClusterSecurityOptions = {}
     if (this._securityOptions) {
-      // TODO:  validate options??
+      const trustOptionsCount =
+          (this._securityOptions.trustOnlyCapella ? 1 : 0) +
+          (this._securityOptions.trustOnlyPemFile ? 1 : 0) +
+          (this._securityOptions.trustOnlyPemString ? 1 : 0) +
+          (this._securityOptions.trustOnlyPlatform ? 1 : 0) +
+          (this._securityOptions.trustOnlyCertificates ? 1 : 0)
+
+      if (trustOptionsCount > 1) {
+        throw new Error(
+            'Only one of trustOnlyCapella, trustOnlyPemFile, trustOnlyPemString, trustOnlyPlatform, or trustOnlyCertificates can be set.'
+        )
+      }
+
       if (this._securityOptions.trustOnlyCapella) {
         securityOpts.trustOnlyCapella = true
       } else if (this._securityOptions.trustOnlyPemFile) {
