@@ -20,7 +20,7 @@
 const assert = require('chai').assert
 const H = require('./harness')
 
-const { PassthroughDeserializer } = require("../lib/deserializers");
+const { PassthroughDeserializer } = require('../lib/deserializers')
 
 describe('#Cluster', function () {
   it('should correctly set timeouts', function () {
@@ -47,24 +47,96 @@ describe('#Cluster', function () {
     assert.equal(cluster.resolveTimeout, 30000)
   })
 
+  it('should raise error on negative connectTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        connectTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
+  it('should raise error on negative dispatchTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        dispatchTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
+  it('should raise error on negative managementTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        managementTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
+  it('should raise error on negative queryTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        queryTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
+  it('should raise error on negative resolveTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        resolveTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
+  it('should raise error on negative socketConnectTimeout', function () {
+    let options = {
+      timeoutOptions: {
+        socketConnectTimeout: -1,
+      },
+    }
+
+    H.throwsHelper(() => {
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
+    }, Error)
+  })
+
   it('should correctly set security options', function () {
     let options = {
       securityOptions: {
         trustOnlyPlatform: true,
         verifyServerCertificates: false,
-        cipherSuites: ["suite"]
-      }
+        cipherSuites: ['suite'],
+      },
     }
 
     const cluster = H.lib.Cluster.createInstance(
-        H.connStr,
-        H.credentials,
-        options
+      H.connStr,
+      H.credentials,
+      options
     )
 
     assert.isTrue(cluster._securityOptions.trustOnlyPlatform)
     assert.isFalse(cluster._securityOptions.verifyServerCertificates)
-    assert.deepEqual(cluster._securityOptions.cipherSuites, ["suite"])
+    assert.deepEqual(cluster._securityOptions.cipherSuites, ['suite'])
     assert.isUndefined(cluster._securityOptions.trustOnlyCapella)
     assert.isUndefined(cluster._securityOptions.trustOnlyPemFile)
     assert.isUndefined(cluster._securityOptions.trustOnlyCertificates)
@@ -72,10 +144,7 @@ describe('#Cluster', function () {
   })
 
   it('should default to trustOnlyCapella if no options are set', function () {
-    const cluster = H.lib.Cluster.createInstance(
-        H.connStr,
-        H.credentials,
-    )
+    const cluster = H.lib.Cluster.createInstance(H.connStr, H.credentials)
 
     assert.isTrue(cluster._securityOptions.trustOnlyCapella)
     assert.isUndefined(cluster._securityOptions.trustOnlyPemFile)
@@ -90,48 +159,44 @@ describe('#Cluster', function () {
     let options = {
       securityOptions: {
         trustOnlyCapella: true,
-        trustOnlyPemFile: "pemFile",
-      }
+        trustOnlyPemFile: 'pemFile',
+      },
     }
 
     H.throwsHelper(() => {
-      H.lib.Cluster.createInstance(
-          H.connStr,
-          H.credentials,
-          options
-      )
+      H.lib.Cluster.createInstance(H.connStr, H.credentials, options)
     }, Error)
   })
 
   it('should correctly set dns options', function () {
     let options = {
       dnsConfig: {
-        nameserver: "localhost",
+        nameserver: 'localhost',
         port: 12345,
-        dnsSrvTimeout: 3000
-      }
+        dnsSrvTimeout: 3000,
+      },
     }
 
     const cluster = H.lib.Cluster.createInstance(
-        H.connStr,
-        H.credentials,
-        options
+      H.connStr,
+      H.credentials,
+      options
     )
 
-    assert.strictEqual(cluster._dnsConfig.nameserver, "localhost")
+    assert.strictEqual(cluster._dnsConfig.nameserver, 'localhost')
     assert.strictEqual(cluster._dnsConfig.port, 12345)
     assert.strictEqual(cluster._dnsConfig.dnsSrvTimeout, 3000)
   })
 
-  it ('should correctly set cluster-level deserializer', function () {
+  it('should correctly set cluster-level deserializer', function () {
     let options = {
-      deserializer: new PassthroughDeserializer()
+      deserializer: new PassthroughDeserializer(),
     }
 
     const cluster = H.lib.Cluster.createInstance(
-        H.connStr,
-        H.credentials,
-        options
+      H.connStr,
+      H.credentials,
+      options
     )
     assert.instanceOf(cluster.deserializer, PassthroughDeserializer)
   })

@@ -126,6 +126,14 @@ function genericTests(instance) {
       assert.isTrue(results.at(0)['$1'])
     })
 
+    it('should should raise error on negative timeout', async function () {
+      await H.throwsHelper(async () => {
+        await instance().executeQuery("SELECT 'FOO' AS message", {
+          timeout: -1,
+        })
+      }, Error)
+    })
+
     it('should work with positional parameters', async function () {
       const results = []
       const qs = `SELECT $2=1`
