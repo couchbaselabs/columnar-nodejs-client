@@ -279,6 +279,8 @@ export class Cluster {
 
     if (!options.timeoutOptions) {
       options.timeoutOptions = {}
+    } else {
+      this._validateTimeoutOptions(options.timeoutOptions)
     }
 
     this._connStr = connStr
@@ -353,6 +355,10 @@ export class Cluster {
       options = {}
     }
 
+    if (options.timeout && options.timeout < 0) {
+      throw new Error('timeout must be non-negative.')
+    }
+
     const exec = new QueryExecutor(this, options.abortSignal)
     return exec.query(statement, options)
   }
@@ -368,6 +374,41 @@ export class Cluster {
         wrapCallback(null)
       })
     }, callback)
+  }
+
+  /**
+   * @internal
+   */
+  private _validateTimeoutOptions(timeoutOptions: TimeoutOptions): void {
+    if (timeoutOptions.connectTimeout && timeoutOptions.connectTimeout < 0) {
+      throw new Error('connectTimeout must be non-negative.')
+    }
+
+    if (timeoutOptions.dispatchTimeout && timeoutOptions.dispatchTimeout < 0) {
+      throw new Error('dispatchTimeout must be non-negative.')
+    }
+
+    if (
+      timeoutOptions.managementTimeout &&
+      timeoutOptions.managementTimeout < 0
+    ) {
+      throw new Error('managementTimeout must be non-negative.')
+    }
+
+    if (timeoutOptions.queryTimeout && timeoutOptions.queryTimeout < 0) {
+      throw new Error('queryTimeout must be non-negative.')
+    }
+
+    if (timeoutOptions.resolveTimeout && timeoutOptions.resolveTimeout < 0) {
+      throw new Error('resolveTimeout must be non-negative.')
+    }
+
+    if (
+      timeoutOptions.socketConnectTimeout &&
+      timeoutOptions.socketConnectTimeout < 0
+    ) {
+      throw new Error('socketConnectTimeout must be non-negative.')
+    }
   }
 
   private _connect() {
@@ -400,15 +441,15 @@ export class Cluster {
     const securityOpts: CppClusterSecurityOptions = {}
     if (this._securityOptions) {
       const trustOptionsCount =
-          (this._securityOptions.trustOnlyCapella ? 1 : 0) +
-          (this._securityOptions.trustOnlyPemFile ? 1 : 0) +
-          (this._securityOptions.trustOnlyPemString ? 1 : 0) +
-          (this._securityOptions.trustOnlyPlatform ? 1 : 0) +
-          (this._securityOptions.trustOnlyCertificates ? 1 : 0)
+        (this._securityOptions.trustOnlyCapella ? 1 : 0) +
+        (this._securityOptions.trustOnlyPemFile ? 1 : 0) +
+        (this._securityOptions.trustOnlyPemString ? 1 : 0) +
+        (this._securityOptions.trustOnlyPlatform ? 1 : 0) +
+        (this._securityOptions.trustOnlyCertificates ? 1 : 0)
 
       if (trustOptionsCount > 1) {
         throw new Error(
-            'Only one of trustOnlyCapella, trustOnlyPemFile, trustOnlyPemString, trustOnlyPlatform, or trustOnlyCertificates can be set.'
+          'Only one of trustOnlyCapella, trustOnlyPemFile, trustOnlyPemString, trustOnlyPlatform, or trustOnlyCertificates can be set.'
         )
       }
 

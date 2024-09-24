@@ -78,6 +78,10 @@ export class Scope {
       options = {}
     }
 
+    if (options.timeout && options.timeout < 0) {
+      throw new Error('timeout must be non-negative.')
+    }
+
     const exec = new QueryExecutor(
       this.cluster,
       options.abortSignal,
