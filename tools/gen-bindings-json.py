@@ -42,10 +42,11 @@ CXX_DEPS_INCLUDE_PATHS = {
 FILE_LIST = [
     "couchbase/retry_reason.hxx",
     "core/json_string.hxx",
+    "core/columnar/agent_config.hxx",
     "core/columnar/query_options.hxx",
     "core/columnar/query_result.hxx",
     "core/columnar/error.hxx",
-    "core/columnar/error_codes.hxx"
+    "core/columnar/error_codes.hxx",
 ]
 
 TYPE_LIST = [
@@ -59,6 +60,7 @@ TYPE_LIST = [
     "couchbase::core::columnar::query_error_properties",
     "couchbase::core::columnar::errc",
     "couchbase::core::columnar::client_errc",
+    "couchbase::core::columnar::timeout_config",
 ]
 
 STD_COMPARATOR_TEMPLATES = ["std::less<{0}>", "std::greater<{0}>", "std::less_equal<{0}>", "std::greater_equal<{0}>"]

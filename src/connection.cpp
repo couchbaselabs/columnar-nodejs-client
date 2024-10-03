@@ -66,7 +66,6 @@ Connection::Init(Napi::Env env, Napi::Object exports)
 Connection::Connection(const Napi::CallbackInfo& info)
   : Napi::ObjectWrap<Connection>(info)
 {
-  _instance = new Instance();
 }
 
 Connection::~Connection()
@@ -84,6 +83,13 @@ Connection::jsConnect(const Napi::CallbackInfo& info)
 
   auto connstrInfo = couchbase::core::utils::parse_connection_string(connstr);
   auto creds = jsToCbpp<couchbase::core::cluster_credentials>(credentialsJsObj);
+
+  couchbase::core::columnar::timeout_config timeout_config;
+  timeout_config.connect_timeout = connstrInfo.options.connect_timeout;
+  timeout_config.dispatch_timeout = connstrInfo.options.dispatch_timeout;
+  timeout_config.query_timeout = connstrInfo.options.query_timeout;
+  timeout_config.management_timeout = connstrInfo.options.management_timeout;
+  this->_instance = new Instance(timeout_config);
 
   connstrInfo.options.security_options =
     jsToCbpp<couchbase::core::columnar::security_options>(securityJsObj);
