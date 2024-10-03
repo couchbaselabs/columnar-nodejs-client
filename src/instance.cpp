@@ -20,9 +20,9 @@
 namespace couchnode
 {
 
-Instance::Instance()
+Instance::Instance(couchbase::core::columnar::timeout_config timeout_config)
   : _cluster(couchbase::core::cluster(_io))
-  , _agent(couchbase::core::columnar::agent(_io, { { _cluster } }))
+  , _agent(couchbase::core::columnar::agent(_io, { { _cluster }, std::move(timeout_config) }))
 {
   _ioThread = std::thread([this]() {
     try {

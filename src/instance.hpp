@@ -32,7 +32,7 @@ private:
   ~Instance();
 
 public:
-  Instance();
+  Instance(couchbase::core::columnar::timeout_config timeout_config);
 
   void asyncDestroy();
 

@@ -67,6 +67,12 @@ export enum CppColumnarQueryScanConsistency {}
 export enum CppColumnarErrc {}
 export enum CppColumnarClientErrc {}
 
+export interface CppColumnarTimeoutConfig {
+  connect_timeout: CppMilliseconds
+  dispatch_timeout: CppMilliseconds
+  query_timeout: CppMilliseconds
+  management_timeout: CppMilliseconds
+}
 export interface CppColumnarQueryOptions {
   statement: string
   database_name?: string

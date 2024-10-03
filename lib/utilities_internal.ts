@@ -28,5 +28,5 @@ export function generateClientString(): string {
   const v8Ver = process.versions.v8.trim()
   const sslVer = process.versions.openssl.trim()
 
-  return `couchnode/${couchnodeVer} (node/${nodeVer}; v8/${v8Ver}; ssl/${sslVer})`
+  return `ncbcc/${couchnodeVer} (node/${nodeVer}; v8/${v8Ver}; ssl/${sslVer})`
 }
