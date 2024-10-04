@@ -414,7 +414,7 @@ export class Cluster {
     // pass it to the C++ core via the connstr.  Need to use golang syntax for correct parsing.
 
     // Remember the translations in the C++ core:
-    // bootstrapTimeout == columnar connection_timeout (which is bootstrap_timeout in C++ core)
+    // bootstrapTimeout == columnar connect_timeout (which is bootstrap_timeout in C++ core)
     if (
       !('timeout.connect_timeout' in dsnObj.options) &&
       this.bootstrapTimeout
