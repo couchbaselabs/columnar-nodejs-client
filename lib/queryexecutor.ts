@@ -171,7 +171,6 @@ export class QueryExecutor {
   query(statement: string, options: QueryOptions): Promise<QueryResult> {
     return new Promise((resolve, reject) => {
       const deserializer = options.deserializer || this._cluster.deserializer
-      const timeout = options.timeout || this._cluster.queryTimeout
 
       const { cppQueryErr, cppQueryResult } = this._cluster.conn.query(
         {
@@ -200,7 +199,7 @@ export class QueryExecutor {
                   .map(([k, v]) => [k, JSON.stringify(v)])
               )
             : {},
-          timeout: timeout,
+          timeout: options.timeout,
         },
         (cppErr) => {
           const err = errorFromCpp(cppErr)

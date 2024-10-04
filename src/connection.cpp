@@ -22,6 +22,8 @@
 #include <core/agent_group.hxx>
 #include <core/operations/management/freeform.hxx>
 #include <core/utils/connection_string.hxx>
+#include <core/utils/duration_parser.hxx>
+#include <core/utils/join_strings.hxx>
 #include <future>
 #include <type_traits>
 
@@ -82,6 +84,18 @@ Connection::jsConnect(const Napi::CallbackInfo& info)
   auto securityJsObj = info[2].As<Napi::Object>();
 
   auto connstrInfo = couchbase::core::utils::parse_connection_string(connstr);
+
+  if (!connstrInfo.warnings.empty()) {
+    auto msg = fmt::format(R"(Invalid option(s) found. Details: {})",
+                           couchbase::core::utils::join_strings(connstrInfo.warnings, ","));
+    throw Napi::Error::New(info.Env(), msg);
+  }
+  if (connstrInfo.error.has_value()) {
+    auto msg =
+      fmt::format("Error parsing connection string. Details: {}", connstrInfo.error.value());
+    throw Napi::Error::New(info.Env(), msg);
+  }
+
   auto creds = jsToCbpp<couchbase::core::cluster_credentials>(credentialsJsObj);
 
   couchbase::core::columnar::timeout_config timeout_config;
@@ -91,8 +105,51 @@ Connection::jsConnect(const Napi::CallbackInfo& info)
   timeout_config.management_timeout = connstrInfo.options.management_timeout;
   this->_instance = new Instance(timeout_config);
 
-  connstrInfo.options.security_options =
-    jsToCbpp<couchbase::core::columnar::security_options>(securityJsObj);
+  if (!securityJsObj.IsNull()) {
+    auto jsTrustOnlyCapella = securityJsObj.Get("trustOnlyCapella");
+    if (!(jsTrustOnlyCapella.IsNull() || jsTrustOnlyCapella.IsUndefined() ||
+          jsTrustOnlyCapella.IsEmpty())) {
+      connstrInfo.options.security_options.trust_only_capella = jsToCbpp<bool>(jsTrustOnlyCapella);
+    }
+
+    auto jsTrustOnlyPemFile = securityJsObj.Get("trustOnlyPemFile");
+    if (!(jsTrustOnlyPemFile.IsNull() || jsTrustOnlyPemFile.IsUndefined() ||
+          jsTrustOnlyPemFile.IsEmpty())) {
+      connstrInfo.options.trust_certificate = jsToCbpp<std::string>(jsTrustOnlyPemFile);
+      connstrInfo.options.security_options.trust_only_pem_file = true;
+      connstrInfo.options.security_options.trust_only_capella = false;
+    }
+
+    auto jsTrustOnlyPemString = securityJsObj.Get("trustOnlyPemString");
+    if (!(jsTrustOnlyPemString.IsNull() || jsTrustOnlyPemString.IsUndefined() ||
+          jsTrustOnlyPemString.IsEmpty())) {
+      connstrInfo.options.trust_certificate_value = jsToCbpp<std::string>(jsTrustOnlyPemString);
+      connstrInfo.options.security_options.trust_only_pem_string = true;
+      connstrInfo.options.security_options.trust_only_capella = false;
+    }
+
+    auto jsTrustOnlyCertificates = securityJsObj.Get("trustOnlyCertificates");
+    if (!(jsTrustOnlyCertificates.IsNull() || jsTrustOnlyCertificates.IsUndefined() ||
+          jsTrustOnlyCertificates.IsEmpty())) {
+      connstrInfo.options.security_options.trust_only_certificates =
+        jsToCbpp<std::vector<std::string>>(jsTrustOnlyCertificates);
+      connstrInfo.options.security_options.trust_only_capella = false;
+    }
+
+    auto jsTrustOnlyPlatform = securityJsObj.Get("trustOnlyPlatform");
+    if (!(jsTrustOnlyPlatform.IsNull() || jsTrustOnlyPlatform.IsUndefined() ||
+          jsTrustOnlyPlatform.IsEmpty())) {
+      connstrInfo.options.security_options.trust_only_platform =
+        jsToCbpp<bool>(jsTrustOnlyPlatform);
+      connstrInfo.options.security_options.trust_only_capella = false;
+    }
+  }
+
+  // if we set the certificate via the connstr, we need to also set the security_option bool
+  if (!connstrInfo.options.trust_certificate.empty() &&
+      !connstrInfo.options.security_options.trust_only_pem_file) {
+    connstrInfo.options.security_options.trust_only_pem_file = true;
+  }
 
   if (!info[3].IsNull()) {
     auto jsDnsConfigObj = info[3].As<Napi::Object>();
@@ -112,6 +169,30 @@ Connection::jsConnect(const Napi::CallbackInfo& info)
       jsDnsConfigObj.Set("dnsSrvTimeout",
                          cbpp_to_js<std::chrono::milliseconds>(
                            info.Env(), connstrInfo.options.dns_config.timeout()));
+    } else if (jsTimeout.IsString()) {
+      auto dns_timeout = jsToCbpp<std::string>(jsTimeout);
+      try {
+        auto parsed_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+          couchbase::core::utils::parse_duration(dns_timeout));
+        jsDnsConfigObj.Set("dnsSrvTimeout",
+                           cbpp_to_js<std::chrono::milliseconds>(info.Env(), parsed_timeout));
+      } catch (const couchbase::core::utils::duration_parse_error& dpe) {
+        auto msg = fmt::format(
+          R"(Invalid option. Unable to parse duration (value: "{}"): {})", dns_timeout, dpe.what());
+        throw Napi::Error::New(info.Env(), msg);
+      } catch (const std::invalid_argument& ex1) {
+        auto msg = fmt::format(
+          R"(Invalid option. Unable to parse duration (value "{}" is not a number): {})",
+          dns_timeout,
+          ex1.what());
+        throw Napi::Error::New(info.Env(), msg);
+      } catch (const std::out_of_range& ex2) {
+        auto msg = fmt::format(
+          R"(Invalid option. Unable to parse duration (value "{}" is out of range): {})",
+          dns_timeout,
+          ex2.what());
+        throw Napi::Error::New(info.Env(), msg);
+      }
     }
     auto cppDnsConfig = jsToCbpp<couchbase::core::io::dns::dns_config>(jsDnsConfigObj);
     connstrInfo.options.dns_config = cppDnsConfig;

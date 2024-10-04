@@ -124,7 +124,6 @@ describe('#Cluster', function () {
       securityOptions: {
         trustOnlyPlatform: true,
         verifyServerCertificates: false,
-        cipherSuites: ['suite'],
       },
     }
 
@@ -136,7 +135,6 @@ describe('#Cluster', function () {
 
     assert.isTrue(cluster._securityOptions.trustOnlyPlatform)
     assert.isFalse(cluster._securityOptions.verifyServerCertificates)
-    assert.deepEqual(cluster._securityOptions.cipherSuites, ['suite'])
     assert.isUndefined(cluster._securityOptions.trustOnlyCapella)
     assert.isUndefined(cluster._securityOptions.trustOnlyPemFile)
     assert.isUndefined(cluster._securityOptions.trustOnlyCertificates)
@@ -152,7 +150,6 @@ describe('#Cluster', function () {
     assert.isUndefined(cluster._securityOptions.trustOnlyPemString)
     assert.isUndefined(cluster._securityOptions.trustOnlyPlatform)
     assert.isUndefined(cluster._securityOptions.verifyServerCertificates)
-    assert.isUndefined(cluster._securityOptions.cipherSuites)
   })
 
   it('should throw an error if multiple trustOnly options are set', function () {
