@@ -71,6 +71,9 @@ export function errorFromCpp(err: CppColumnarError | null): Error | null {
         queryErrorProperties.code
       )
     }
+    // Handle special case inherited C++ operational auth failure
+    case 6:
+      return new errs.InvalidCredentialError(err.message_and_ctx)
     default:
       return new errs.ColumnarError(err.message_and_ctx)
   }
