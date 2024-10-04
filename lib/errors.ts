@@ -86,3 +86,15 @@ export class OperationCanceledError extends Error {
     this.name = this.constructor.name
   }
 }
+
+/**
+ * Indicates that one of the passed arguments was invalid.
+ *
+ * @category Error Handling
+ */
+export class InvalidArgumentError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = this.constructor.name
+  }
+}

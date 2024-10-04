@@ -45,13 +45,12 @@ export interface CppClusterSecurityOptions {
   trustOnlyPemString?: string
   trustOnlyPlatform?: boolean
   trustOnlyCertificates?: string[]
-  cipherSuites?: string[]
 }
 
 export interface CppDnsConfig {
   nameserver?: string
   port?: number
-  dnsSrvTimeout?: number
+  dnsSrvTimeout?: number | string
 }
 
 export interface CppColumnarQueryResult {

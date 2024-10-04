@@ -27,6 +27,7 @@ import { PromiseHelper, NodeCallback } from './utilities'
 import { generateClientString } from './utilities_internal'
 import { Database } from './database'
 import { Deserializer, JsonDeserializer } from './deserializers'
+import { InvalidArgumentError } from './errors'
 import { QueryOptions, QueryResult } from './querytypes'
 import { QueryExecutor } from './queryexecutor'
 
@@ -105,14 +106,7 @@ export interface SecurityOptions {
    * If disabled, SDK will trust any certificate regardless of validity.
    * Should not be disabled in production environments.
    */
-  verifyServerCertificates?: boolean
-
-  /**
-   * Specifies the names of TLS cipher suites the SDK is allowed to use while
-   * negotiating TLS settings.  An empty list indicates any cipher suite supported
-   * by the runtime environment may be used.
-   */
-  cipherSuites?: string[]
+  disableServerCertificateVerification?: boolean
 }
 
 /**
@@ -136,7 +130,7 @@ export interface DnsConfig {
   /**
    * Specifies the default timeout for DNS SRV operations, specified in millseconds.
    */
-  dnsSrvTimeout?: number
+  dnsSrvTimeout?: number | string
 }
 
 /**
@@ -190,8 +184,8 @@ export interface ClusterOptions {
  */
 export class Cluster {
   private _connStr: string
-  private _queryTimeout: number
-  private _managementTimeout: number
+  private _queryTimeout: number | undefined
+  private _managementTimeout: number | undefined
   private _connectTimeout: number | undefined
   private _bootstrapTimeout: number | undefined
   private _resolveTimeout: number | undefined
@@ -212,14 +206,14 @@ export class Cluster {
   /**
   @internal
   */
-  get queryTimeout(): number {
+  get queryTimeout(): number | undefined {
     return this._queryTimeout
   }
 
   /**
   @internal
   */
-  get managementTimeout(): number {
+  get managementTimeout(): number | undefined {
     return this._managementTimeout
   }
 
@@ -289,8 +283,8 @@ export class Cluster {
       knownProfiles.applyProfile(options.configProfile, options)
     }
 
-    this._queryTimeout = options.timeoutOptions.queryTimeout || 75000
-    this._managementTimeout = options.timeoutOptions.managementTimeout || 75000
+    this._queryTimeout = options.timeoutOptions.queryTimeout
+    this._managementTimeout = options.timeoutOptions.managementTimeout
     this._dispatchTimeout = options.timeoutOptions.dispatchTimeout
     this._bootstrapTimeout = options.timeoutOptions?.connectTimeout
     this._connectTimeout = options.timeoutOptions?.socketConnectTimeout
@@ -308,7 +302,7 @@ export class Cluster {
       this._dnsConfig = {
         nameserver: options.dnsConfig.nameserver,
         port: options.dnsConfig.port,
-        dnsSrvTimeout: options.dnsConfig.dnsSrvTimeout || 500,
+        dnsSrvTimeout: options.dnsConfig.dnsSrvTimeout,
       }
     } else {
       this._dnsConfig = null
@@ -416,17 +410,51 @@ export class Cluster {
 
     dsnObj.options.user_agent_extra = generateClientString()
 
-    if (this.bootstrapTimeout) {
-      dsnObj.options['bootstrap_timeout'] = this.bootstrapTimeout.toString()
+    // if the timeout value is not already in the connstr and provided in the TimeoutConfig
+    // pass it to the C++ core via the connstr.  Need to use golang syntax for correct parsing.
+
+    // Remember the translations in the C++ core:
+    // bootstrapTimeout == columnar connection_timeout (which is bootstrap_timeout in C++ core)
+    if (
+      !('timeout.connect_timeout' in dsnObj.options) &&
+      this.bootstrapTimeout
+    ) {
+      dsnObj.options['timeout.connect_timeout'] =
+        `${this.bootstrapTimeout.toString()}ms`
     }
-    if (this.connectTimeout) {
-      dsnObj.options['kv_connect_timeout'] = this.connectTimeout.toString()
+    // connectTimeout == columnar socket_connect_timeout (which is connect_timeout in C++ core)
+    if (
+      !('timeout.socket_connect_timeout' in dsnObj.options) &&
+      this.connectTimeout
+    ) {
+      dsnObj.options['timeout.socket_connect_timeout'] =
+        `${this.connectTimeout.toString()}ms`
     }
-    if (this.resolveTimeout) {
-      dsnObj.options['resolve_timeout'] = this.resolveTimeout.toString()
+    if (!('timeout.resolve_timeout' in dsnObj.options) && this.resolveTimeout) {
+      dsnObj.options['timeout.resolve_timeout'] =
+        `${this.resolveTimeout.toString()}ms`
     }
-    if (this.dispatchTimeout) {
-      dsnObj.options['dispatch_timeout'] = this.dispatchTimeout.toString()
+    if (
+      !('timeout.dispatch_timeout' in dsnObj.options) &&
+      this.dispatchTimeout
+    ) {
+      dsnObj.options['timeout.dispatch_timeout'] =
+        `${this.dispatchTimeout.toString()}ms`
+    }
+    if (!('timeout.query_timeout' in dsnObj.options) && this.queryTimeout) {
+      dsnObj.options['timeout.query_timeout'] =
+        `${this.queryTimeout.toString()}ms`
+    }
+
+    if (
+      'timeout.dns_srv_timeout' in dsnObj.options &&
+      typeof dsnObj.options['timeout.dns_srv_timeout'] === 'string'
+    ) {
+      if (!this._dnsConfig) {
+        this._dnsConfig = {}
+      }
+      this._dnsConfig.dnsSrvTimeout = dsnObj.options['timeout.dns_srv_timeout']
+      delete dsnObj.options['timeout.dns_srv_timeout']
     }
 
     const authOpts: CppClusterCredentials = {}
@@ -439,7 +467,10 @@ export class Cluster {
     authOpts.allowed_sasl_mechanisms = ['PLAIN']
 
     const securityOpts: CppClusterSecurityOptions = {}
-    if (this._securityOptions) {
+    if (
+      !('security.trust_only_pem_file' in dsnObj.options) &&
+      this._securityOptions
+    ) {
       const trustOptionsCount =
         (this._securityOptions.trustOnlyCapella ? 1 : 0) +
         (this._securityOptions.trustOnlyPemFile ? 1 : 0) +
@@ -448,7 +479,7 @@ export class Cluster {
         (this._securityOptions.trustOnlyCertificates ? 1 : 0)
 
       if (trustOptionsCount > 1) {
-        throw new Error(
+        throw new InvalidArgumentError(
           'Only one of trustOnlyCapella, trustOnlyPemFile, trustOnlyPemString, trustOnlyPlatform, or trustOnlyCertificates can be set.'
         )
       }
@@ -474,20 +505,28 @@ export class Cluster {
         securityOpts.trustOnlyCapella = true
       }
       if (
-        typeof this._securityOptions.verifyServerCertificates === 'boolean' &&
-        !this._securityOptions.verifyServerCertificates
+        typeof this._securityOptions.disableServerCertificateVerification ===
+          'boolean' &&
+        this._securityOptions.disableServerCertificateVerification &&
+        !('security.disable_server_certificate_verification' in dsnObj.options)
       ) {
-        dsnObj.options['tls_verify'] = 'none'
+        dsnObj.options['security.disable_server_certificate_verification'] =
+          'true'
       }
-    } else {
+    } else if (!('security.trust_only_pem_file' in dsnObj.options)) {
       securityOpts.trustOnlyCapella = true
-    }
-    if (this._securityOptions.cipherSuites) {
-      securityOpts.cipherSuites = this._securityOptions.cipherSuites
+    } else {
+      securityOpts.trustOnlyCapella = false
     }
 
     const connStr = dsnObj.toString()
-
-    this._conn.connect(connStr, authOpts, securityOpts, this._dnsConfig)
+    try {
+      this._conn.connect(connStr, authOpts, securityOpts, this._dnsConfig)
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Invalid option')) {
+        throw new InvalidArgumentError(err.message)
+      }
+      throw err
+    }
   }
 }
