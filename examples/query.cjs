@@ -21,13 +21,14 @@ async function main() {
   // Update this to your cluster
   const clusterConnStr = 'couchbases://--your-instance--'
   const username = 'username'
-  const password = 'P@ssw0rd_12345!'
+  const password = 'password'
   // User Input ends here.
 
   const credential = new columnar.Credential(username, password)
   const cluster = columnar.createInstance(clusterConnStr, credential, {
-    securityOptions: {
-      trustOnlyCertificates: columnar.Certificates.getNonprodCertificates(),
+    // NOTE:  Only an example on how to use options.  Not a recommendation.
+    timeoutOptions: {
+      queryTimeout: 10000,
     },
   })
 
@@ -43,7 +44,7 @@ async function main() {
   qs =
     'SELECT * FROM `travel-sample`.inventory.airline WHERE country=$1 LIMIT $2;'
   res = await cluster.executeQuery(qs, {
-    postionalParameters: ['United States', 10],
+    positionalParameters: ['United States', 10],
   })
   for await (let row of res.rows()) {
     console.log('Found row: ', row)
