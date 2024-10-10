@@ -21,14 +21,15 @@ async function main() {
   // Update this to your cluster
   const clusterConnStr = 'couchbases://--your-instance--'
   const username = 'username'
-  const password = 'P@ssw0rd_12345!'
+  const password = 'password'
   // User Input ends here.
 
   const credential = new columnar.Credential(username, password)
   const scope = columnar
     .createInstance(clusterConnStr, credential, {
-      securityOptions: {
-        trustOnlyCertificates: columnar.Certificates.getNonprodCertificates(),
+      // NOTE:  Only an example on how to use options.  Not a recommendation.
+      timeoutOptions: {
+        queryTimeout: 10000,
       },
     })
     .database('travel-sample')
