@@ -18,9 +18,18 @@
 'use strict'
 
 const assert = require('chai').assert
+const fs = require('fs')
+const ini = require('ini')
+const path = require('path')
 const uuid = require('uuid')
 const semver = require('semver')
 const columnar = require('../lib/columnar')
+
+const TEST_CONFIG_INI = path.join(
+  path.resolve(__dirname, '..'),
+  'test',
+  'testConfig.ini'
+)
 
 try {
   const SegfaultHandler = require('segfault-handler')
@@ -68,37 +77,75 @@ var TEST_CONFIG = {
   collection: 'Default',
   user: undefined,
   pass: undefined,
+  nonprod: true,
+  disableCertVerification: false,
   features: [],
 }
 
-if (process.env.NCBCCCSTR !== undefined) {
+let configIni
+try {
+  configIni = ini.parse(fs.readFileSync(TEST_CONFIG_INI, 'utf-8'))
+} catch (e) {
+  // config.ini is optional
+}
+
+if (configIni && configIni.connstr !== undefined) {
+  TEST_CONFIG.connstr = configIni.connstr
+} else if (process.env.NCBCCCSTR !== undefined) {
   TEST_CONFIG.connstr = process.env.NCBCCCSTR
 }
-if (process.env.NCBCCCVER !== undefined) {
+
+if ((configIni && configIni.version) || process.env.NCBCCCVER !== undefined) {
   assert(!!TEST_CONFIG.connstr, 'must not specify a version without a connstr')
-  var ver = process.env.NCBCCCVER
+  var ver = configIni.version || process.env.NCBCCCVER
   var major = semver.major(ver)
   var minor = semver.minor(ver)
   var patch = semver.patch(ver)
   TEST_CONFIG.version = new ServerVersion(major, minor, patch)
 }
-if (process.env.NCBCCDATABASE !== undefined) {
-  TEST_CONFIG.database = process.env.NCBCCDATABASE
+
+let fqdnTokens = []
+if ((configIni && configIni.fqdn !== undefined)) {
+  fqdnTokens = configIni.fqdn.split('.')
+} else if (process.env.NCBCCFQDN !== undefined){
+  fqdnTokens = process.env.NCBCCFQDN.split('.')
 }
-if (process.env.NCBCCSCOPE !== undefined) {
-  TEST_CONFIG.scope = process.env.NCBCCSCOPE
+
+if(fqdnTokens.length > 0){
+  if (fqdnTokens.length != 3) {
+    throw new Error(`Invalid FQDN provided. FQDN=${fqdnTokens.join('.')}`)
+  }
+  TEST_CONFIG.database = fqdnTokens[0]
+  TEST_CONFIG.scope = fqdnTokens[1]
+  TEST_CONFIG.collection = fqdnTokens[2]
 }
-if (process.env.NCBCCCOLLECTION !== undefined) {
-  TEST_CONFIG.collection = process.env.NCBCCCOLLECTION
-}
-if (process.env.NCBCCUSER !== undefined) {
+
+if (configIni && configIni.username !== undefined) {
+  TEST_CONFIG.user = configIni.username
+} else if (process.env.NCBCCUSER !== undefined) {
   TEST_CONFIG.user = process.env.NCBCCUSER
 }
-if (process.env.NCBCCPASS !== undefined) {
+
+if (configIni && configIni.password !== undefined) {
+  TEST_CONFIG.pass = configIni.password
+} else if (process.env.NCBCCPASS !== undefined) {
   TEST_CONFIG.pass = process.env.NCBCCPASS
 }
-if (process.env.NCBCCFEAT !== undefined) {
-  var featureStrs = process.env.NCBCCFEAT.split(',')
+
+if (configIni && configIni.nonprod !== undefined) {
+  TEST_CONFIG.nonprod = configIni.nonprod
+} else if (process.env.NCBCCNONPROD !== undefined) {
+  TEST_CONFIG.nonprod = process.env.NCBCCNONPROD
+}
+
+if (configIni && configIni.disable_cert_verification !== undefined) {
+  TEST_CONFIG.disableCertVerification = configIni.disable_cert_verification
+} else if (process.env.NCBCCDISABLECERTVERIFICATION !== undefined) {
+  TEST_CONFIG.disableCertVerification = process.env.NCBCCDISABLECERTVERIFICATION
+}
+
+if ((configIni && configIni.features) || process.env.NCBCCFEAT !== undefined) {
+  var featureStrs = (configIni.features || process.env.NCBCCFEAT).split(',')
   featureStrs.forEach((featureStr) => {
     var featureName = featureStr.substr(1)
 
@@ -129,6 +176,8 @@ class Harness {
     this._collection = TEST_CONFIG.collection
     this._user = TEST_CONFIG.user
     this._pass = TEST_CONFIG.pass
+    this._nonprod = TEST_CONFIG.nonprod
+    this._disableCertVerification = TEST_CONFIG.disableCertVerification
     this._integrationEnabled = true
 
     if (!this._connstr) {
@@ -175,6 +224,14 @@ class Harness {
       username: this._user,
       password: this._pass,
     }
+  }
+
+  get nonprod() {
+    return this._nonprod
+  }
+
+  get disableCertVerification() {
+    return this._disableCertVerification
   }
 
   async throwsHelper(fn) {
@@ -247,11 +304,21 @@ class Harness {
       credential.password = this._pass
     }
 
-    return columnar.Cluster.createInstance(options.connstr, credential, {
-      securityOptions: {
-        trustOnlyCertificates: columnar.Certificates.getNonprodCertificates(),
-      },
-    })
+    if (this.nonprod) {
+      return columnar.Cluster.createInstance(options.connstr, credential, {
+        securityOptions: {
+          trustOnlyCertificates: columnar.Certificates.getNonprodCertificates(),
+        },
+      })
+    } else if (this.disableCertVerification) {
+      return columnar.Cluster.createInstance(options.connstr, credential, {
+        securityOptions: {
+          disableServerCertificateVerification: true,
+        },
+      })
+    } else {
+      return columnar.Cluster.createInstance(options.connstr, credential)
+    }
   }
 
   async cleanup() {

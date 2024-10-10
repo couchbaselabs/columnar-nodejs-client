@@ -39,6 +39,10 @@ on:
         required: false
         default: ""
         type: string
+      cxx_change:
+        description: "The PR number or SHA if wanting to build against a PR/SHA in the C++ SDK"
+        required: false
+        type: string
     outputs:
       workflow_run_id:
         description: "The workflow run ID"
@@ -142,10 +146,10 @@ jobs:
           cd ../..
         env:
           CXX_CHG: ${{ inputs.cxx_change }}
-      - name: Setup Node.js
+      - name: Setup Node.js ${{ env.DEFAULT_NODE }}
         uses: actions/setup-node@v4
         with:
-          node-version: "18.x"
+          node-version: ${{ env.DEFAULT_NODE }}
       - name: Confirm Node.js version
         run: node --version
       - name: Install dependencies
@@ -751,18 +755,39 @@ jobs:
         run: |
           dir /a
           md prebuilds
-          echo "columnar_local_prebuilds=${{ github.workspace }}\prebuilds" >> .npmrc
+          echo columnar_local_prebuilds=${{ github.workspace }}\prebuilds >> .npmrc
           type .npmrc
+          npm init -y
       - uses: actions/download-artifact@v4
         with:
           name: windows-${{ matrix.arch }}-prebuild
           path: prebuilds
-      - name: Install w/ prebuild
+      - name: Get package name
+        id: get-package-name
+        shell: pwsh
         run: |
-          npm init -y
           $env:PKG_NAME=$(gci *.tgz).Name
           gci $env:PKG_NAME
-          npm install $env:PKG_NAME
+          echo "package_name=$env:PKG_NAME" >> $env:GITHUB_OUTPUT
+      - name: Install w/ prebuild
+        shell: cmd
+        run: |
+          @chcp 65001>nul
+          echo "output package name"
+          echo %PACKAGE_NAME%
+          echo "output directory"
+          dir /a
+          echo "output prebuilds directory"
+          dir /a prebuilds
+          npm install --save %PACKAGE_NAME% -ddd
+          node --version
+          node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
+        env:
+          PACKAGE_NAME: ${{ steps.get-package-name.outputs.package_name }}
+      - name: Validate
+        shell: pwsh
+        run: |
+          node --version
           node -p "JSON.parse(require('couchbase-columnar').cbppMetadata)"
       - name: Upload Node.js prebuild as artifact
         if: ${{ matrix.node-version == env.DEFAULT_NODE }}
