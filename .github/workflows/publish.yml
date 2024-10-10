@@ -10,7 +10,7 @@ on:
         type: string
       version:
         description: "The Release version.  Allowed format: x.y.z"
-        required: false
+        required: true
         default: ""
         type: string
       publish_dryrun:
@@ -28,40 +28,117 @@ on:
         - dev
         - beta
         - rc
-      prebuilds_workflow_id:
+      prebuilds_run_id:
         description: "The workflow run ID of a prebuilds workflow run.  Set if wanting to use prebuilds from an already completed run."
         required: false
         default: ""
         type: string
+      test_input:
+        description: "JSON formatted object representing test input."
+        required: false
+        default: ""
+        type: string
+      publish_input:
+        description: "JSON formatted object representing publish options."
+        required: false
+        default: "{\"PUBLISH_NPM\": true, \"PUBLISH_API_DOCS\": true, \"SKIP_TESTS\": false}"
+        type: string
+
+env:
+  DEFAULT_NODE: "18"
 
 jobs:
   validate-input:
     runs-on: ubuntu-22.04
     steps:
-      - name: If release, verify SHA is provided
-        if: ${{ inputs.sha == '' || inputs.sha.length != 40 }}
+      - name: Verify SHA is provided
+        if: inputs.sha == ''
         run: |
           echo "::error Must provide a SHA."
           exit 1
-      - name: If release version, npm tag also provided
-        if: ${{ inputs.version != '' && inputs.npm_tag == '' }}
+      - name: Verify SHA is correct length
+        if: inputs.sha != ''
         run: |
-          echo "::error If releasing by setting a release version, must provide a npm tag."
+          echo '"${{ inputs.sha }}"' | jq -e '. | length == 40'
+      - name: Verify version is provided
+        if: inputs.version == ''
+        run: |
+          echo "::error Must provide a version."
           exit 1
 
+
+  output-publish-params:
+    runs-on: ubuntu-22.04
+    needs: validate-input
+    outputs:
+      publish_npm: ${{ steps.output-publish-params.outputs.publish_npm }}
+      publish_api_docs: ${{ steps.output-publish-params.outputs.publish_api_docs }}
+      skip_tests: ${{ steps.output-publish-params.outputs.skip_tests }}
+    steps:
+      - name: Output Publish parameters
+        id: output-publish-params
+        run: |
+          export $(echo '${{ inputs.publish_input }}' | jq -r '. | to_entries[] | join("=")')
+          echo "PUBLISH_NPM=$PUBLISH_NPM"
+          echo "PUBLISH_API_DOCS=$PUBLISH_API_DOCS"
+          echo "SKIP_TESTS=$SKIP_TESTS"
+          echo "publish_npm=$PUBLISH_NPM" >> $GITHUB_OUTPUT
+          echo "publish_api_docs=$PUBLISH_API_DOCS" >> $GITHUB_OUTPUT
+          echo "skip_tests=$SKIP_TESTS" >> $GITHUB_OUTPUT
+
+
   build-prebuilds:
-    if: ${{ inputs.prebuilds_workflow_id == '' }}
+    if: ${{ inputs.prebuilds_run_id == '' }}
     needs: validate-input
     uses: ./.github/workflows/prebuilds.yml
     with:
       is_release: true
-      sha: ${{ inputs.sha }}
-      version: ${{ inputs.version }}
+      sha: ${{ inputs.sha && inputs.sha || '' }}
+      version: ${{ inputs.version && inputs.version || '' }}
+      cxx_change: ${{ inputs.cxx_change && inputs.cxx_change || '' }}
+
+
+  set-prebuilds-run-id:
+    runs-on: ubuntu-22.04
+    needs: build-prebuilds
+    outputs:
+      prebuilds_run_id: ${{ inputs.prebuilds_run_id == '' && steps.save_prebuilds_run_id.outputs.prebuilds_run_id || inputs.prebuilds_run_id }}
+    if: |
+      always()
+      && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
+    steps:
+      - name: Save prebuilds_run_id
+        if: ${{ inputs.prebuilds_run_id == '' }}
+        id: save_prebuilds_run_id
+        run: |
+          echo "prebuilds_run_id=${{ needs.build-prebuilds.outputs.workflow_run_id }}" >> $GITHUB_OUTPUT
+
+
+  tests:
+    needs: [build-prebuilds, set-prebuilds-run-id, output-publish-params]
+    if: |
+      always()
+      && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
+      && needs.set-prebuilds-run-id.result == 'success'
+      && needs.output-publish-params.result == 'success'
+      && needs.output-publish-params.outputs.skip_tests == 'false'
+    uses: ./.github/workflows/tests.yml
+    with:
+      is_release: true
+      sha: ${{ inputs.sha && inputs.sha || '' }}
+      version: ${{ inputs.version && inputs.version || '' }}
+      cxx_change: ${{ inputs.cxx_change && inputs.cxx_change || '' }}
+      prebuilds_run_id: ${{ needs.set-prebuilds-run-id.outputs.prebuilds_run_id }}
+      test_input: ${{ inputs.test_input && inputs.test_input || '' }}
+
 
   upload-api-docs:
-    name: Upload to API docs
-    needs: build-prebuilds
-    if: ${{ always() }}
+    name: Upload API docs as artifact
+    needs: [build-prebuilds, tests]
+    if: |
+      always()
+      && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
+      && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -83,18 +160,18 @@ jobs:
           npm ci --ignore-scripts
           mkdir -p build/Release
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        if: ${{ inputs.prebuilds_run_id == '' }}
         with:
           name: ncbcc-artifact-linux-x86_64-prebuild
           path: build/Release
           run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        if: ${{ inputs.prebuilds_run_id != '' }}
         with:
           name: ncbcc-artifact-linux-x86_64-prebuild
           path: build/Release
-          run-id: ${{ inputs.prebuilds_workflow_id }}
+          run-id: ${{ inputs.prebuilds_run_id }}
           github-token: ${{ github.token }}
       - name: Build docs
         run: |
@@ -109,23 +186,30 @@ jobs:
           name: ncbcc-api-docs
           path: docs/
 
-  upload-npm:
-    name: Upload to npm (prebuilds already built)
-    needs: build-prebuilds
-    if: ${{ always() }}
+
+  publish-npm:
+    name: Publish SDK to npm (prebuilds already built)
+    needs: [build-prebuilds, tests, output-publish-params]
+    if: |
+      always()
+      && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
+      && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
+      && needs.output-publish-params.result == 'success'
+      && needs.output-publish-params.outputs.publish_npm == 'true'
     runs-on: ubuntu-22.04
+    environment: publish
     steps:
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        if: ${{ inputs.prebuilds_run_id == '' }}
         with:
           name: ncbcc-sdist
           run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        if: ${{ inputs.prebuilds_run_id != '' }}
         with:
           name: ncbcc-sdist
-          run-id: ${{ inputs.prebuilds_workflow_id }}
+          run-id: ${{ inputs.prebuilds_run_id }}
           github-token: ${{ github.token }}
       - name: Extract sdist source
         run: |
@@ -135,19 +219,19 @@ jobs:
           cp -r package/** .
           rm -rf package
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        if: ${{ inputs.prebuilds_run_id == '' }}
         with:
           name: ncbcc-lib
           run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        if: ${{ inputs.prebuilds_run_id != '' }}
         with:
           name: ncbcc-lib
-          run-id: ${{ inputs.prebuilds_workflow_id }}
+          run-id: ${{ inputs.prebuilds_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        if: ${{ inputs.prebuilds_run_id == '' }}
         with:
           pattern: ncbcc-artifact-*
           path: prebuilds
@@ -155,24 +239,24 @@ jobs:
           run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        if: ${{ inputs.prebuilds_run_id != '' }}
         with:
           pattern: ncbcc-artifact-*
           path: prebuilds
           merge-multiple: true
-          run-id: ${{ inputs.prebuilds_workflow_id }}
+          run-id: ${{ inputs.prebuilds_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id == '' }}
+        if: ${{ inputs.prebuilds_run_id == '' }}
         with:
           name: ncbcc-platform-packagejson
           run-id: ${{ needs.build-prebuilds.outputs.workflow_run_id }}
           github-token: ${{ github.token }}
       - uses: actions/download-artifact@v4
-        if: ${{ inputs.prebuilds_workflow_id != '' }}
+        if: ${{ inputs.prebuilds_run_id != '' }}
         with:
           name: ncbcc-platform-packagejson
-          run-id: ${{ inputs.prebuilds_workflow_id }}
+          run-id: ${{ inputs.prebuilds_run_id }}
           github-token: ${{ github.token }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -214,4 +298,41 @@ jobs:
         env:
           CI_SCRIPTS_URL: "https://raw.githubusercontent.com/couchbaselabs/sdkbuild-jenkinsfiles/master/couchnode"
           PUBLISH_DRY_RUN: "${{ inputs.publish_dryrun }}"
-          NPM_TAG: ${{ inputs.npm_tag }}   
+          NPM_TAG: ${{ inputs.npm_tag }}
+
+
+  validate-npm:
+    name: Validate SDK on npm
+    needs: [publish-npm]
+    if: |
+      always()
+      && needs.publish-npm.result == 'success'
+      && needs.publish-npm.result != 'skipped'
+    uses: ./.github/workflows/verify_release.yml
+    with:
+      version: ${{ inputs.version }}
+      npm_tag: ${{ inputs.npm_tag }}
+      test_input: ${{ inputs.test_input }}
+
+
+  publish-api-docs:
+    name: Publish SDK API docs
+    needs: [upload-api-docs, tests, output-publish-params, validate-npm]
+    environment: publish
+    if: |
+      always()
+      && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
+      && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
+      && needs.output-publish-params.result == 'success'
+      && needs.output-publish-params.outputs.publish_api_docs == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download API docs
+        uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-api-docs
+          path: docs
+      - name: Publish API docs to S3
+        run: |
+          export DOCS_DIR=${{ github.workspace }}/docs
+          ls -alh $DOCS_DIR
