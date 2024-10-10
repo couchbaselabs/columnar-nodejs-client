@@ -88,7 +88,7 @@
     "package.json",
     "README.md",
     "BUILDING.md",
-    "columnar-sdk-nodejs-black-duck-manifest.yaml",
+    "couchbase-sdk-columnar-nodejs-black-duck-manifest.yaml",
     "scripts/*.js",
     "src/*.{c,h}pp",
     "dist/*.{t,j}s",
@@ -159,7 +159,6 @@
     "deps/couchbase-cxx-cache/spdlog/*/spdlog/LICENSE",
     "deps/couchbase-cxx-cache/spdlog/*/spdlog/cmake/**",
     "deps/couchbase-cxx-cache/spdlog/*/spdlog/include/**/*",
-    "deps/couchbase-cxx-cache/spdlog/*/spdlog/src/**/*",
-    "deps/couchbase-cxx-cache/mozilla-ca-bundle.*"
+    "deps/couchbase-cxx-cache/spdlog/*/spdlog/src/**/*"
   ]
 }

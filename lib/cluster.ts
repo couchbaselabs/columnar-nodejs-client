@@ -21,7 +21,6 @@ import binding, {
   CppClusterSecurityOptions,
   CppConnection,
 } from './binding'
-import { knownProfiles } from './configProfile'
 import { ConnSpec } from './connspec'
 import { PromiseHelper, NodeCallback } from './utilities'
 import { generateClientString } from './utilities_internal'
@@ -159,14 +158,6 @@ export interface ClusterOptions {
   dnsConfig?: DnsConfig
 
   /**
-   * Applies the specified ConfigProfile options to the cluster.
-   *
-   * Volatile: This API is subject to change at any time.
-   *
-   */
-  configProfile?: string
-
-  /**
    * Sets the default deserializer for converting query result rows into objects.
    * If not specified, the SDK uses an instance of the default {@link JsonDeserializer}.
    *
@@ -278,10 +269,6 @@ export class Cluster {
     }
 
     this._connStr = connStr
-
-    if (options.configProfile) {
-      knownProfiles.applyProfile(options.configProfile, options)
-    }
 
     this._queryTimeout = options.timeoutOptions.queryTimeout
     this._managementTimeout = options.timeoutOptions.managementTimeout
