@@ -1,0 +1,161 @@
+name: verify_release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version of the SDK to install and verify."
+        required: true
+        default: ""
+        type: string
+      npm_tag:
+        description: "The tag to use to install the SDK."
+        required: true
+        default: ""
+        type: string
+      test_input:
+        description: "JSON formatted object representing test input."
+        required: true
+        default: ""
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: "The version of the SDK to install and verify."
+        required: true
+        default: ""
+        type: string
+      npm_tag:
+        description: "The tag to use to install the SDK."
+        required: true
+        default: ""
+        type: string
+      test_input:
+        description: "JSON formatted object representing test input."
+        required: true
+        default: ""
+        type: string
+
+env:
+  DEFAULT_NODE: "18"
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Verify SDK version
+        if: inputs.version == ''
+        run: |
+          echo "::error Must provide a valid SDK version."
+          exit 1
+      - name: Verify test input has been provided
+        if: inputs.test_input == ''
+        run: |
+          echo "::error Must provide a test input JSON object."
+          exit 1
+      - name: Validate host
+        if: ${{ inputs.test_input != '' && fromJSON(inputs.test_input).NCBCCCSTR == ''}}
+        run: |
+          echo "::error must provide NCBCCCSTR."
+          exit 1
+      - name: Validate user
+        if: ${{ inputs.test_input != '' && fromJSON(inputs.test_input).NCBCCUSERNAME == '' }}
+        run: |
+          echo "::error must provide NCBCCUSERNAME."
+          exit 1
+      - name: Validate password
+        if: ${{ inputs.test_input != '' && fromJSON(inputs.test_input).NCBCCPASSWORD == '' }}
+        run: |
+          echo "::error must provide NCBCCPASSWORD."
+          exit 1
+      - name: Validate FQDN
+        if: ${{ inputs.test_input != '' && fromJSON(inputs.test_input).NCBCCFQDN == '' }}
+        run: |
+          echo "::error must provide NCBCCFQDN."
+          exit 1
+
+  test-setup:
+    runs-on: ubuntu-22.04
+    outputs:
+      install-cmd: ${{ inputs.npm_tag == '' && steps.npm-cmd.outputs.install_cmd && steps.npm-tag-cmd.outputs.install_cmd }}
+    needs: validate-input
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.DEFAULT_NODE }}
+      - name: Build testConfig.ini
+        run: |
+          export $(echo '${{ inputs.test_input }}' | jq -r '. | to_entries[] | join("=")')
+          echo "Output environment"
+          env | grep NCBCC
+          cat > testConfig.ini <<EOF
+          connstr = $NCBCCCSTR
+          username = $NCBCCUSERNAME
+          password = $NCBCCPASSWORD
+          nonprod = $NCBCCNONPROD
+          fqdn = $NCBCCFQDN
+          EOF
+          echo "Output testConfig.ini"
+          cat testConfig.ini
+          mkdir ncbcc-test
+          mv testConfig.ini ncbcc-test
+      - name: Create install tag command
+        id: npm-tag-cmd
+        if: ${{ inputs.npm_tag != '' }}
+        run: |
+          export INSTALL_CMD='couchbase-columnar@$SDK_TAG'
+          echo "INSTALL_CMD=$INSTALL_CMD"
+          echo "install_cmd=$INSTALL_CMD" >> $GITHUB_OUTPUT
+        env:
+          SDK_TAG: ${{ inputs.npm_tag }}
+      - name: Create install version command
+        id: npm-cmd
+        if: ${{ inputs.npm_tag  == ''}}
+        run: |
+          export INSTALL_CMD='couchbase-columnar@$SDK_VERSION'
+          echo "INSTALL_CMD=$INSTALL_CMD"
+          echo "install_cmd=$INSTALL_CMD" >> $GITHUB_OUTPUT
+        env:
+          SDK_VERSION: ${{ inputs.version }}
+      - name: Upload test setup
+        uses: actions/upload-artifact@v4
+        with:
+          retention-days: 1
+          name: ncbcc-test-setup
+          path: |
+            ncbcc-test/
+
+  verify-linux:
+    runs-on: ubuntu-22.04
+    needs: test-setup
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ['ubuntu-22.04']
+        node-version: ["16", "18", "20"]
+        arch: ['x86_64', 'arm64']
+    steps:
+      - name: Set up QEMU
+        if: ${{ matrix.arch == 'arm64' }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-test-setup
+      - name: Run in docker
+        uses: addnab/docker-run-action@v3
+        with:
+          image: node:${{ matrix.node-version }}-bullseye-slim
+          options: >-
+            --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64'}}
+            -v ${{ github.workspace }}:/work
+            -e INSTALL_CMD=${{ needs.test-setup.outputs.install-cmd }}
+          run: |
+            node --version
+            cd /work
+            ls -alh
+            npm init -y
+            npm install $INSTALL_CMD
+            npm list
