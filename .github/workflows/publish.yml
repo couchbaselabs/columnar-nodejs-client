@@ -198,6 +198,9 @@ jobs:
       && needs.output-publish-params.outputs.publish_npm == 'true'
     runs-on: ubuntu-22.04
     environment: publish
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         if: ${{ inputs.prebuilds_run_id == '' }}
@@ -262,6 +265,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.DEFAULT_NODE }}
+          registry-url: 'https://registry.npmjs.org'
       - name: Confirm Node version
         run: |
           node --version
@@ -281,13 +285,6 @@ jobs:
           npm install --ignore-scripts
           mkdir sdist
           npm pack --pack-destination sdist
-      - name: Upload Node.js sdist as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          retention-days: 1
-          name: ncbcc-artifact-sdist
-          path: |
-            ./sdist/*.tgz
       - name: Publish to npm
         run: |
           env
@@ -299,6 +296,7 @@ jobs:
           CI_SCRIPTS_URL: "https://raw.githubusercontent.com/couchbaselabs/sdkbuild-jenkinsfiles/master/couchnode"
           PUBLISH_DRY_RUN: "${{ inputs.publish_dryrun }}"
           NPM_TAG: ${{ inputs.npm_tag }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 
   validate-npm:
@@ -319,6 +317,9 @@ jobs:
     name: Publish SDK API docs
     needs: [upload-api-docs, tests, output-publish-params, validate-npm]
     environment: publish
+    # permissions:
+    #   id-token: write
+    #   contents: read
     if: |
       always()
       && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
@@ -332,7 +333,22 @@ jobs:
         with:
           name: ncbcc-api-docs
           path: docs
-      - name: Publish API docs to S3
+      # - name: Setup AWS Credentials
+      #   uses: aws-actions/configure-aws-credentials@v3
+      #   with:
+      #     role-to-assume: arn:aws:iam::786014483886:role/SDK_GHA
+      #     aws-region: us-west-1
+      - name: Download API docs
+        uses: actions/download-artifact@v4
+        with:
+          name: ncbcc-api-docs
+          path: docs
+      - name: Upload to S3
         run: |
-          export DOCS_DIR=${{ github.workspace }}/docs
-          ls -alh $DOCS_DIR
+          ls -alh ./docs
+          export S3_URL="s3://docs.couchbase.com/sdk-api/columnar-nodejs-client-$SDK_VERSION/"
+          echo "publish command: aws s3 cp ./docs $S3_URL --recursive --acl public-read"
+          # aws s3 cp ./docs s3://docs.couchbase.com/sdk-api/columnar-nodejs-client-$SDK_VERSION/ --recursive --acl public-read
+        env:
+          SDK_VERSION: ${{ inputs.version }}
+

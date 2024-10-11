@@ -317,7 +317,7 @@ function getPrebuildsInfo(dir) {
     const allowedPlatformPkg = `${packageName}-${
       platform === 'linux' ? libc : platform
     }-${arch}-${_runtime}`
-    const fullPlatformPkgName = `@${packageName}/${allowedPlatformPkg}`
+    const fullPlatformPkgName = `@couchbase/${allowedPlatformPkg}`
     const packageRequire = require('module').createRequire(
       path.join(dir, 'package.json')
     )
@@ -340,10 +340,10 @@ function getSSLType(runtime, version) {
 }
 
 function getSupportedPlatformPackages(packageName) {
-  packageName = packageName || 'couchbase'
-  if (packageName !== 'couchbase') {
+  packageName = packageName || 'couchbase-columnar'
+  if (packageName !== 'couchbase-columnar') {
     throw new Error(
-      'Cannot build supported platform packages for package other than couchbase.'
+      'Cannot build supported platform packages for package other than couchbase-columnar.'
     )
   }
 
@@ -351,8 +351,8 @@ function getSupportedPlatformPackages(packageName) {
   // format: couchbase-<platform>-<arch>-<runtime>
   supportedPlatforms.forEach((plat) => {
     supportedArches.forEach((arch) => {
-      // we don't support Windows or linuxmusl ARM atm
-      if ((plat === 'win32' || plat === 'linuxmusl') && arch === 'arm64') return
+      // we don't support Windows ARM atm
+      if (plat === 'win32' && arch === 'arm64') return
       allowedRuntimes.forEach((rt) => {
         packageNames.push(`${packageName}-${plat}-${arch}-${rt}`)
       })
@@ -475,7 +475,7 @@ function resolvePrebuild(
         platform === 'linux' ? libc : platform
       }-${arch}-${_runtime}`
       if (supportedPackages.includes(platformPkg)) {
-        const fullPlatformPkgName = `@${packageName}/${platformPkg}`
+        const fullPlatformPkgName = `@couchbase/${platformPkg}`
         const packageRequire = require('module').createRequire(
           path.join(dir, 'package.json')
         )
