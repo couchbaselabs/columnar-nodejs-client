@@ -477,7 +477,7 @@ jobs:
             NAPI_VERSION=${{ needs.sdist.outputs.napi_version }}
             NCBCC_VERSION=${{ needs.sdist.outputs.ncbcc_version }}
             echo "Built binary for platform=$PLATFORM, n-api=$NAPI_VERSION, arch=$ARCH"
-            FILENAME="couchbase-columnar-v$NCBCC_VERSION-napi-$NAPI_VERSION-macos-$ARCH-boringssl"
+            FILENAME="couchbase-columnar-v$NCBCC_VERSION-napi-$NAPI_VERSION-darwin-$ARCH-boringssl"
             cd build/RelWithDebInfo
             ls -alh
             mv couchbase_impl.node $FILENAME.node
