@@ -317,13 +317,14 @@ jobs:
     name: Publish SDK API docs
     needs: [upload-api-docs, tests, output-publish-params, validate-npm]
     environment: publish
-    # permissions:
-    #   id-token: write
-    #   contents: read
+    permissions:
+      id-token: write
+      contents: read
     if: |
       always()
       && (needs.build-prebuilds.result == 'success' || needs.build-prebuilds.result == 'skipped')
       && (needs.tests.result == 'success' || needs.tests.result == 'skipped')
+      && (needs.validate-npm.result == 'success' || needs.validate-npm.result == 'skipped')
       && needs.output-publish-params.result == 'success'
       && needs.output-publish-params.outputs.publish_api_docs == 'true'
     runs-on: ubuntu-22.04
@@ -333,11 +334,11 @@ jobs:
         with:
           name: ncbcc-api-docs
           path: docs
-      # - name: Setup AWS Credentials
-      #   uses: aws-actions/configure-aws-credentials@v3
-      #   with:
-      #     role-to-assume: arn:aws:iam::786014483886:role/SDK_GHA
-      #     aws-region: us-west-1
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: arn:aws:iam::786014483886:role/SDK_GHA
+          aws-region: us-west-1
       - name: Download API docs
         uses: actions/download-artifact@v4
         with:
@@ -346,9 +347,7 @@ jobs:
       - name: Upload to S3
         run: |
           ls -alh ./docs
-          export S3_URL="s3://docs.couchbase.com/sdk-api/columnar-nodejs-client-$SDK_VERSION/"
-          echo "publish command: aws s3 cp ./docs $S3_URL --recursive --acl public-read"
-          # aws s3 cp ./docs s3://docs.couchbase.com/sdk-api/columnar-nodejs-client-$SDK_VERSION/ --recursive --acl public-read
+          aws s3 cp ./docs s3://docs.couchbase.com/sdk-api/columnar-nodejs-client-$SDK_VERSION/ --recursive --acl public-read
         env:
           SDK_VERSION: ${{ inputs.version }}
 
